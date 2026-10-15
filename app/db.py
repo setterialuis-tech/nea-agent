@@ -298,6 +298,10 @@ class PgStore(PgDispatchStore):
                     conversation_id,
                 )
                 await conn.execute(
+                    "DELETE FROM media_enviada WHERE conversation_id = $1",
+                    conversation_id,
+                )
+                await conn.execute(
                     """
                     UPDATE bot_conversation
                     SET phase = 'descubrimiento', greeted = FALSE,
@@ -353,6 +357,27 @@ class PgStore(PgDispatchStore):
         ]
 
     # -------------------------------------------------------------- slots ---
+
+    async def media_ya_enviada(self, conversation_id: int, url: str) -> bool:
+        async with self.pool.acquire() as conn:
+            return bool(
+                await conn.fetchval(
+                    "SELECT 1 FROM media_enviada WHERE conversation_id = $1 AND url = $2",
+                    conversation_id,
+                    url,
+                )
+            )
+
+    async def marcar_media_enviada(self, conversation_id: int, url: str) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO media_enviada (conversation_id, url)
+                VALUES ($1, $2) ON CONFLICT DO NOTHING
+                """,
+                conversation_id,
+                url,
+            )
 
     async def replace_offered_slots(
         self, conversation_id: int, slots: list[OfferedSlot]

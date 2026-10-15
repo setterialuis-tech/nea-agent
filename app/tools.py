@@ -212,11 +212,52 @@ AGENDA_V2_SCHEMAS = [
     {"type": "function", "function": {"name": "cancel_session", "description": "Cancela la cita seleccionada SOLO después de confirmación explícita del cliente. Usa el selectionToken devuelto por list_bookings.", "parameters": {"type": "object", "properties": {"selection_token": {"type": "string"}, "confirmation": {"type": "boolean"}}, "required": ["selection_token", "confirmation"]}}},
 ]
 
+# Imagen o video real de WhatsApp (no un enlace en el texto). Se ofrece solo con
+# SEND_MEDIA_ENABLED y un CRM que lo soporte (ver tool_schemas).
+MEDIA_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "send_media",
+        "description": (
+            "Envía al lead una imagen o un video como archivo de WhatsApp, con "
+            "su pie de foto. Úsala SOLO con las URL que aparecen en tu "
+            "conocimiento del negocio, y solo cuando las instrucciones digan "
+            "que toca enviar ese recurso. Cada recurso se envía UNA sola vez "
+            "por conversación (si ya se envió, responde ya_enviado: no lo "
+            "repitas). El archivo sale DESPUÉS de tu mensaje de texto de este "
+            "turno, así que escribe siempre antes una frase que lo introduzca "
+            "y NO pegues la URL en el texto."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL https exacta del recurso."},
+                "type": {"type": "string", "enum": ["image", "video"]},
+                "caption": {
+                    "type": "string",
+                    "description": (
+                        "Pie de foto breve y ordenado (máx. 1024 caracteres): "
+                        "una línea de título y, si hace falta, 2-3 líneas cortas."
+                    ),
+                },
+            },
+            "required": ["url", "type"],
+        },
+    },
+}
+
+MEDIA_CAPTION_MAX = 1024
+
 # Herramientas que solo tienen sentido si el CRM agenda.
 AGENDA_TOOLS = frozenset({"propose_slots", "book_session", "reschedule_session"})
 
 
-def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False) -> list[dict[str, Any]]:
+def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False, media: bool = False) -> list[dict[str, Any]]:
+    base = _tool_schemas(agenda_enabled, agenda_v2, coordination)
+    return base + [MEDIA_SCHEMA] if media else base
+
+
+def _tool_schemas(agenda_enabled: bool, agenda_v2: bool, coordination: bool) -> list[dict[str, Any]]:
     """El catálogo que se le ofrece al modelo en ESTE turno.
 
     Contra un CRM sin agenda no se le enseñan las herramientas de agendar: si
@@ -391,6 +432,8 @@ class ToolRuntime:
         self.booking_confirmation: dict[str, Any] | None = None
         self.routed_out = False
         self.proposed = False
+        # send_media: se encolan y turn.py los envía DESPUÉS del texto del turno.
+        self.media_queue: list[dict[str, str]] = []
 
     async def execute(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -412,6 +455,8 @@ class ToolRuntime:
                 return await self._book_session(args)
             if name == "reschedule_session":
                 return await self._reschedule_session(args)
+            if name == "send_media":
+                return await self._send_media(args)
             if name == "route_out":
                 return await self._route_out()
             if name == "handoff":
@@ -425,6 +470,22 @@ class ToolRuntime:
                 "error": "crm_error",
                 "detalle": "no pude completar la acción; continúa la conversación o haz handoff",
             }
+
+    async def _send_media(self, args: dict[str, Any]) -> dict[str, Any]:
+        s = self._ctx.settings
+        if not (s.send_media_enabled and getattr(self._ctx.crm, "supports_media", False)):
+            return {"ok": False, "error": "no_disponible", "detalle": "no puedes enviar archivos; comparte la información en texto"}
+        url = str(args.get("url") or "").strip()
+        media_type = args.get("type")
+        if not url.startswith("https://") or media_type not in ("image", "video"):
+            return {"ok": False, "error": "argumentos_invalidos", "detalle": "url https exacta y type image|video"}
+        if await self._ctx.store.media_ya_enviada(self._conv.id, url) or any(
+            m["url"] == url for m in self.media_queue
+        ):
+            return {"ok": False, "error": "ya_enviado", "detalle": "ese recurso ya se envió en esta conversación; no lo repitas"}
+        caption = str(args.get("caption") or "").strip()[:MEDIA_CAPTION_MAX]
+        self.media_queue.append({"url": url, "type": str(media_type), "caption": caption})
+        return {"ok": True, "nota": "se enviará justo después de tu mensaje de texto de este turno"}
 
     async def _update_ficha(self, args: dict[str, Any]) -> dict[str, Any]:
         # Tolera el drift del LLM: manda lo que haya, el CRM normaliza flojo.

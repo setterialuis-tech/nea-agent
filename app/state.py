@@ -206,6 +206,10 @@ class Store(Protocol):
         self, conversation_id: int, limit: int
     ) -> list[BotMessage]: ...
 
+    # medios ya enviados (send_media: cada recurso una vez por conversación)
+    async def media_ya_enviada(self, conversation_id: int, url: str) -> bool: ...
+    async def marcar_media_enviada(self, conversation_id: int, url: str) -> None: ...
+
     # slots ofrecidos
     async def replace_offered_slots(
         self, conversation_id: int, slots: list[OfferedSlot]
@@ -262,6 +266,7 @@ class MemoryStore(MemoryDispatchStore):
         self._conv_by_identity: dict[tuple[str, str], int] = {}
         self.messages: list[BotMessage] = []
         self.offered: dict[int, list[OfferedSlot]] = {}
+        self.media_sent: set[tuple[int, str]] = set()
         self.pending_sends: dict[int, PendingSend] = {}
 
     async def mark_processed(self, wa_message_id: str) -> bool:
@@ -374,6 +379,7 @@ class MemoryStore(MemoryDispatchStore):
             m for m in self.messages if m.conversation_id != conversation_id
         ]
         self.offered.pop(conversation_id, None)
+        self.media_sent = {m for m in self.media_sent if m[0] != conversation_id}
         conv = self.conversations[conversation_id]
         conv.phase = "descubrimiento"
         conv.greeted = False
@@ -404,6 +410,12 @@ class MemoryStore(MemoryDispatchStore):
     ) -> list[BotMessage]:
         msgs = [m for m in self.messages if m.conversation_id == conversation_id]
         return msgs[-limit:]
+
+    async def media_ya_enviada(self, conversation_id: int, url: str) -> bool:
+        return (conversation_id, url) in self.media_sent
+
+    async def marcar_media_enviada(self, conversation_id: int, url: str) -> None:
+        self.media_sent.add((conversation_id, url))
 
     async def replace_offered_slots(
         self, conversation_id: int, slots: list[OfferedSlot]

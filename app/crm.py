@@ -181,6 +181,9 @@ def canonical_handoff_reason(reason: str | None) -> str:
 
 class CrmClient:
     media_path = "/api/bot/media/"
+    # POST /api/bot/messages con `media` (imagen/video por URL): solo el fork
+    # clínico de Vocero; el modo cloud (BrainsCrmClient) no lo tiene.
+    supports_media = True
     def __init__(
         self,
         base_url: str,
@@ -235,6 +238,34 @@ class CrmClient:
             raise CrmConflict(_conflict_code(resp))
         if resp.status_code != 200:
             raise CrmError(f"messages devolvió {resp.status_code}")
+        data: dict[str, Any] = resp.json()
+        return data
+
+    async def send_media(
+        self,
+        conversation_id: str,
+        url: str,
+        media_type: str,
+        caption: str | None = None,
+    ) -> dict[str, Any]:
+        """Envía una imagen o un video por URL pública, con caption.
+
+        El CRM descarga la URL (solo dominios de su BOT_MEDIA_HOSTS), la guarda
+        en la bandeja y la sube a Meta. 409 ai_paused|window_closed igual que
+        el texto; 422 si la URL no es de un dominio permitido o no es imagen/video.
+        """
+        media: dict[str, Any] = {"url": url, "type": media_type}
+        if caption:
+            media["caption"] = caption
+        resp = await self._request(
+            "POST",
+            "/api/bot/messages",
+            json={"conversationId": conversation_id, "media": media},
+        )
+        if resp.status_code == 409:
+            raise CrmConflict(_conflict_code(resp))
+        if resp.status_code != 200:
+            raise CrmError(f"messages(media) devolvió {resp.status_code}")
         data: dict[str, Any] = resp.json()
         return data
 

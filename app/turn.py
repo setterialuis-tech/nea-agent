@@ -693,6 +693,8 @@ async def run_turn(
         sent = await _send(ctx, conv.id, str(crm_conv_id), final_text)
         if sent:
             await ctx.store.add_message(conv.id, "assistant", final_text)
+            # Los archivos van SIEMPRE después de la frase que los introduce.
+            await _enviar_medios(ctx, conv.id, str(crm_conv_id), runtime.media_queue)
 
     # El handoff se ejecuta DESPUÉS de la despedida (si no, el CRM la rechaza
     # con 409 ai_paused).
@@ -945,7 +947,7 @@ async def _tool_loop(
     """
     for _ in range(MAX_TOOL_ROUNDS):
         reply = await ctx.llm.complete(
-            messages, tools=tool_schemas(ctx.agenda_enabled, bool(getattr(ctx.crm, "supports_agenda_v2", False)), bool(getattr(ctx.crm, "supports_coordination", False)))
+            messages, tools=tool_schemas(ctx.agenda_enabled, bool(getattr(ctx.crm, "supports_agenda_v2", False)), bool(getattr(ctx.crm, "supports_coordination", False)), media=bool(ctx.settings.send_media_enabled and getattr(ctx.crm, "supports_media", False)))
         )
         if not reply.tool_calls:
             return reply.content  # turno de puro texto
@@ -1016,6 +1018,27 @@ async def _send(ctx: AppContext, conv_id: int, crm_conv_id: str, text: str) -> b
         pending_id,
     )
     return False
+
+
+async def _enviar_medios(
+    ctx: AppContext, conv_id: int, crm_conv_id: str, cola: list[dict[str, str]]
+) -> None:
+    """Envía las imágenes/videos que el modelo pidió con send_media.
+
+    Un fallo no reintenta ni tumba el turno: el lead ya tiene el texto, y el
+    recurso no se marca como enviado, así que puede pedirse de nuevo.
+    """
+    for item in cola:
+        caption = a_whatsapp(item["caption"]) if item["caption"] else None
+        try:
+            await ctx.crm.send_media(crm_conv_id, item["url"], item["type"], caption)
+        except CrmConflict as exc:
+            logger.info("medio bloqueado por el CRM (%s) — silencio", exc.code)
+            return
+        except CrmError as exc:
+            logger.warning("medio no enviado (%s): %s", item["url"], exc)
+            continue
+        await ctx.store.marcar_media_enviada(conv_id, item["url"])
 
 
 async def _safe_handoff(

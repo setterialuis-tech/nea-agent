@@ -181,6 +181,10 @@ class Settings(BaseSettings):
     tester_wa_ids: str = ""  # CSV; vacía = responde a todos (Constitución V)
     coalesce_seconds: float = 4.0
     followup_hours: float = 4.0
+    # Herramienta send_media: enviar imagen/video por URL con caption. Solo
+    # funciona contra un CRM cuyo POST /api/bot/messages acepte `media` (el
+    # fork clínico de Vocero); contra el CRM oficial, déjala en false.
+    send_media_enabled: bool = False
     # Candado de cierre (app/stall.py): cuándo Nea se despide de una
     # conversación que no va a ningún lado y cuánto calla después. Los
     # valores por defecto son los de siempre; 0 apaga ese disparador.
