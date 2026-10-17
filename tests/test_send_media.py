@@ -104,3 +104,23 @@ async def test_si_el_crm_rechaza_el_medio_no_se_marca_como_enviado(ctx, client, 
     await asyncio.sleep(0.3)
     conv = await ctx.store.get_or_create_conversation(IDENTITY)
     assert not await ctx.store.media_ya_enviada(conv.id, VID)
+
+
+PDF = "https://files.catbox.moe/brochure-torre-norte.pdf"
+
+
+async def test_un_brochure_pdf_se_encola_como_document():
+    ctx = make_ctx(make_settings(send_media_enabled=True))
+    conv = await ctx.store.get_or_create_conversation(IDENTITY)
+    rt = ToolRuntime(ctx, conv, CRM_CONV_ID)
+    res = await rt.execute("send_media", {"url": PDF, "type": "document", "caption": "Brochure Torre Norte"})
+    assert res["ok"] is True
+    assert rt.media_queue == [{"url": PDF, "type": "document", "caption": "Brochure Torre Norte"}]
+    # el mismo brochure no se manda dos veces en la conversación
+    assert (await rt.execute("send_media", {"url": PDF, "type": "document"}))["error"] == "ya_enviado"
+    await ctx.crm.aclose()
+
+
+def test_la_herramienta_anuncia_document_en_su_esquema():
+    esquema = next(t for t in tool_schemas(media=True) if t["function"]["name"] == "send_media")
+    assert "document" in esquema["function"]["parameters"]["properties"]["type"]["enum"]

@@ -219,8 +219,9 @@ MEDIA_SCHEMA: dict[str, Any] = {
     "function": {
         "name": "send_media",
         "description": (
-            "Envía al lead una imagen o un video como archivo de WhatsApp, con "
-            "su pie de foto. Úsala SOLO con las URL que aparecen en tu "
+            "Envía al lead una imagen, un video o un documento PDF (brochure, "
+            "ficha técnica) como archivo de WhatsApp, con su pie de foto. "
+            "Para un PDF usa type=document. Úsala SOLO con las URL que aparecen en tu "
             "conocimiento del negocio, y solo cuando las instrucciones digan "
             "que toca enviar ese recurso. Cada recurso se envía UNA sola vez "
             "por conversación (si ya se envió, responde ya_enviado: no lo "
@@ -232,7 +233,7 @@ MEDIA_SCHEMA: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "URL https exacta del recurso."},
-                "type": {"type": "string", "enum": ["image", "video"]},
+                "type": {"type": "string", "enum": ["image", "video", "document"]},
                 "caption": {
                     "type": "string",
                     "description": (
@@ -477,8 +478,8 @@ class ToolRuntime:
             return {"ok": False, "error": "no_disponible", "detalle": "no puedes enviar archivos; comparte la información en texto"}
         url = str(args.get("url") or "").strip()
         media_type = args.get("type")
-        if not url.startswith("https://") or media_type not in ("image", "video"):
-            return {"ok": False, "error": "argumentos_invalidos", "detalle": "url https exacta y type image|video"}
+        if not url.startswith("https://") or media_type not in ("image", "video", "document"):
+            return {"ok": False, "error": "argumentos_invalidos", "detalle": "url https exacta y type image|video|document"}
         if await self._ctx.store.media_ya_enviada(self._conv.id, url) or any(
             m["url"] == url for m in self.media_queue
         ):
