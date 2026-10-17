@@ -185,6 +185,10 @@ class Settings(BaseSettings):
     # funciona contra un CRM cuyo POST /api/bot/messages acepte `media` (el
     # fork clínico de Vocero); contra el CRM oficial, déjala en false.
     send_media_enabled: bool = False
+    # Herramienta qualify_lead: avisar al CRM que un lead quedó calificado (el CRM
+    # lo mueve de etapa, guarda el resumen y avisa al asesor). Solo contra el CRM
+    # clínico/inmobiliario con AVISOS=on; contra el oficial, déjala en false.
+    qualify_enabled: bool = False
     # Candado de cierre (app/stall.py): cuándo Nea se despide de una
     # conversación que no va a ningún lado y cuánto calla después. Los
     # valores por defecto son los de siempre; 0 apaga ese disparador.

@@ -253,9 +253,39 @@ MEDIA_CAPTION_MAX = 1024
 AGENDA_TOOLS = frozenset({"propose_slots", "book_session", "reschedule_session"})
 
 
-def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False, media: bool = False) -> list[dict[str, Any]]:
+QUALIFY_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "qualify_lead",
+        "description": (
+            "Marca al lead como CALIFICADO y avisa al asesor humano con un resumen. "
+            "Úsala UNA sola vez, cuando ya tengas los datos que exigen tus "
+            "instrucciones y el lead mostró interés real (por ejemplo, aceptó una "
+            "visita o una llamada). Escribe el resumen en 4 o 5 líneas cortas: "
+            "contacto, qué busca u ofrece, zona, presupuesto o plazo y el "
+            "siguiente paso acordado. No inventes datos."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "Resumen para el asesor (máx. 2000 caracteres), en líneas cortas.",
+                },
+            },
+            "required": ["summary"],
+        },
+    },
+}
+
+
+def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False, media: bool = False, qualify: bool = False) -> list[dict[str, Any]]:
     base = _tool_schemas(agenda_enabled, agenda_v2, coordination)
-    return base + [MEDIA_SCHEMA] if media else base
+    if media:
+        base = base + [MEDIA_SCHEMA]
+    if qualify:
+        base = base + [QUALIFY_SCHEMA]
+    return base
 
 
 def _tool_schemas(agenda_enabled: bool, agenda_v2: bool, coordination: bool) -> list[dict[str, Any]]:
@@ -450,6 +480,8 @@ class ToolRuntime:
                 return await self._ctx.crm.cancel_booking(self._crm_conv_id, str(args["selection_token"]), True)
             if name == "update_ficha":
                 return await self._update_ficha(args)
+            if name == "qualify_lead":
+                return await self._qualify_lead(args)
             if name == "propose_slots":
                 return await self._propose_slots(args)
             if name == "book_session":
@@ -471,6 +503,21 @@ class ToolRuntime:
                 "error": "crm_error",
                 "detalle": "no pude completar la acción; continúa la conversación o haz handoff",
             }
+
+    async def _qualify_lead(self, args: dict[str, Any]) -> dict[str, Any]:
+        if not (self._ctx.settings.qualify_enabled and hasattr(self._ctx.crm, "qualify")):
+            return {"ok": False, "error": "no_disponible", "detalle": "no puedes calificar por herramienta; sigue el flujo y haz handoff"}
+        summary = str(args.get("summary") or "").strip()[:2000]
+        if not summary:
+            return {"ok": False, "error": "argumentos_invalidos", "detalle": "summary es obligatorio"}
+        try:
+            data = await self._ctx.crm.qualify(self._crm_conv_id, summary)
+        except CrmError:
+            return {"ok": False, "error": "crm_error", "detalle": "no pude registrar la calificación; continúa y haz handoff"}
+        if data.get("skipped"):
+            return {"ok": True, "nota": "los avisos están desactivados en el CRM; continúa con el flujo (handoff)"}
+        enviados = [n for n in (data.get("notified") or []) if n.get("status") == "enviado"]
+        return {"ok": True, "nota": "lead calificado y asesor avisado", "avisos_enviados": len(enviados)}
 
     async def _send_media(self, args: dict[str, Any]) -> dict[str, Any]:
         s = self._ctx.settings

@@ -282,6 +282,24 @@ class CrmClient:
         data: dict[str, Any] = resp.json()
         return data
 
+    async def qualify(self, conversation_id: str, summary: str) -> dict[str, Any]:
+        """Avisa que el lead está calificado (POST /api/bot/qualify).
+
+        El CRM mueve la etapa, guarda el resumen en la ficha y avisa al asesor
+        (correo y/o plantilla de WhatsApp). 404 = ese CRM no tiene el módulo.
+        """
+        resp = await self._request(
+            "POST",
+            "/api/bot/qualify",
+            json={"conversationId": conversation_id, "summary": summary},
+        )
+        if resp.status_code == 404:
+            raise CrmError("qualify no disponible en este CRM")
+        if resp.status_code != 200:
+            raise CrmError(f"qualify devolvió {resp.status_code}")
+        data: dict[str, Any] = resp.json()
+        return data
+
     async def post_handoff(self, conversation_id: str, reason: str | None = None) -> None:
         resp = await self._request(
             "POST",
