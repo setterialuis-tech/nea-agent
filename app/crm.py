@@ -300,6 +300,48 @@ class CrmClient:
         data: dict[str, Any] = resp.json()
         return data
 
+    async def create_quote(
+        self,
+        conversation_id: str,
+        items: list[dict[str, Any]],
+        customer_name: str | None = None,
+        reference: str | None = None,
+    ) -> dict[str, Any]:
+        """Pide una cotización en PDF (POST /api/bot/quotes).
+
+        El CRM calcula SOLO con la tabla de precios del negocio, arma el PDF,
+        lo envía por WhatsApp y registra el presupuesto. Los «no» del negocio
+        (partida fuera de la tabla, sin tabla, límite diario) vuelven como
+        dict con `error` para que el modelo decida; 404 = ese CRM no tiene el
+        módulo. Timeout largo: armar y subir el PDF a Meta tarda unos segundos.
+        """
+        body: dict[str, Any] = {"conversationId": conversation_id, "items": items}
+        if customer_name:
+            body["customerName"] = customer_name
+        if reference:
+            body["reference"] = reference
+        resp = await self._request("POST", "/api/bot/quotes", json=body, timeout=45.0)
+        if resp.status_code == 404:
+            raise CrmError("create_quote no disponible en este CRM")
+        if resp.status_code in (409, 422, 429):
+            try:
+                payload: dict[str, Any] = resp.json()
+            except ValueError:
+                payload = {}
+            err = payload.get("error") or {}
+            return {
+                "ok": False,
+                "error": str(err.get("code") or resp.status_code),
+                "detalle": str(err.get("message") or ""),
+                "validas": payload.get("validas") or [],
+            }
+        if es_caida(resp.status_code):
+            raise CrmUnreachable(f"quotes devolvió {resp.status_code}")
+        if resp.status_code != 200:
+            raise CrmError(f"quotes devolvió {resp.status_code}")
+        data: dict[str, Any] = resp.json()
+        return data
+
     async def post_handoff(self, conversation_id: str, reason: str | None = None) -> None:
         resp = await self._request(
             "POST",

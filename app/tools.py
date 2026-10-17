@@ -279,12 +279,58 @@ QUALIFY_SCHEMA: dict[str, Any] = {
 }
 
 
-def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False, media: bool = False, qualify: bool = False) -> list[dict[str, Any]]:
+QUOTE_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "create_quote",
+        "description": (
+            "Envía al cliente una COTIZACIÓN EN PDF con la marca del negocio. "
+            "Úsala SOLO después de que el cliente aceptó explícitamente recibirla "
+            "(pregúntale antes, p. ej. «¿Te envío la cotización en PDF?»). Las "
+            "partidas deben escribirse EXACTAMENTE como en la TABLA DE PRECIOS PARA "
+            "COTIZAR del conocimiento del negocio, con su cantidad en la unidad de "
+            "la tabla. El sistema calcula el rango con esa tabla (tú no pones "
+            "precios) y envía el PDF por WhatsApp en ese momento. Si responde "
+            "partida_desconocida, no estimes esa partida: corrige el nombre con la "
+            "lista de validas o pasa la conversación al asesor."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "description": "Partidas de la obra o del pedido (máx. 30).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "partida": {"type": "string", "description": "Nombre exacto de la partida en la tabla."},
+                            "cantidad": {"type": "number", "description": "Cantidad en la unidad de la tabla (m², ml, punto, equipo…)."},
+                        },
+                        "required": ["partida", "cantidad"],
+                    },
+                },
+                "customer_name": {"type": "string", "description": "Nombre del cliente tal como lo dio."},
+                "reference": {
+                    "type": "string",
+                    "description": "Una o dos líneas: qué obra, dónde y en qué estado (p. ej. remodelación en Miraflores).",
+                },
+            },
+            "required": ["items"],
+        },
+    },
+}
+
+QUOTE_MAX_ITEMS = 30
+
+
+def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False, media: bool = False, qualify: bool = False, quotes: bool = False) -> list[dict[str, Any]]:
     base = _tool_schemas(agenda_enabled, agenda_v2, coordination)
     if media:
         base = base + [MEDIA_SCHEMA]
     if qualify:
         base = base + [QUALIFY_SCHEMA]
+    if quotes:
+        base = base + [QUOTE_SCHEMA]
     return base
 
 
@@ -482,6 +528,8 @@ class ToolRuntime:
                 return await self._update_ficha(args)
             if name == "qualify_lead":
                 return await self._qualify_lead(args)
+            if name == "create_quote":
+                return await self._create_quote(args)
             if name == "propose_slots":
                 return await self._propose_slots(args)
             if name == "book_session":
@@ -518,6 +566,46 @@ class ToolRuntime:
             return {"ok": True, "nota": "los avisos están desactivados en el CRM; continúa con el flujo (handoff)"}
         enviados = [n for n in (data.get("notified") or []) if n.get("status") == "enviado"]
         return {"ok": True, "nota": "lead calificado y asesor avisado", "avisos_enviados": len(enviados)}
+
+    async def _create_quote(self, args: dict[str, Any]) -> dict[str, Any]:
+        if not (self._ctx.settings.quotes_enabled and hasattr(self._ctx.crm, "create_quote")):
+            return {"ok": False, "error": "no_disponible", "detalle": "no puedes enviar cotizaciones en PDF; da el rango en texto o haz handoff"}
+        crudos = args.get("items")
+        items: list[dict[str, Any]] = []
+        if isinstance(crudos, list):
+            for it in crudos[:QUOTE_MAX_ITEMS]:
+                if not isinstance(it, dict):
+                    continue
+                partida = str(it.get("partida") or "").strip()[:160]
+                try:
+                    cantidad = float(it.get("cantidad"))
+                except (TypeError, ValueError):
+                    continue
+                if partida and cantidad > 0:
+                    items.append({"partida": partida, "cantidad": cantidad})
+        if not items:
+            return {"ok": False, "error": "argumentos_invalidos", "detalle": "manda al menos una partida con su cantidad (> 0)"}
+        nombre = str(args.get("customer_name") or "").strip()[:120] or None
+        referencia = str(args.get("reference") or "").strip()[:600] or None
+        try:
+            data = await self._ctx.crm.create_quote(self._crm_conv_id, items, nombre, referencia)
+        except CrmError:
+            return {"ok": False, "error": "crm_error", "detalle": "no pude generar la cotización; da el rango en texto y haz handoff"}
+        if data.get("ok") is False:
+            return data
+        if not data.get("sent"):
+            return {
+                "ok": False,
+                "error": "no_enviada",
+                "codigo": data.get("code"),
+                "detalle": "la cotización quedó guardada pero no se pudo enviar; dile al cliente que el asesor se la hará llegar y haz handoff",
+            }
+        return {
+            "ok": True,
+            "codigo": data.get("code"),
+            "rango": data.get("range"),
+            "nota": "el PDF YA se envió al cliente; en tu mensaje confírmalo en una frase (número y rango), recuerda que es una estimación que se confirma en la visita y no pegues enlaces",
+        }
 
     async def _send_media(self, args: dict[str, Any]) -> dict[str, Any]:
         s = self._ctx.settings

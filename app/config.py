@@ -189,6 +189,10 @@ class Settings(BaseSettings):
     # lo mueve de etapa, guarda el resumen y avisa al asesor). Solo contra el CRM
     # clínico/inmobiliario con AVISOS=on; contra el oficial, déjala en false.
     qualify_enabled: bool = False
+    # Herramienta create_quote: pedir al CRM una cotización en PDF (el CRM
+    # calcula con SU tabla de precios, arma el PDF con la marca y lo envía por
+    # WhatsApp). Solo contra el CRM con COTIZACIONES=on; si no, déjala en false.
+    quotes_enabled: bool = False
     # Candado de cierre (app/stall.py): cuándo Nea se despide de una
     # conversación que no va a ningún lado y cuánto calla después. Los
     # valores por defecto son los de siempre; 0 apaga ese disparador.

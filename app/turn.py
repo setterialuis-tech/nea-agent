@@ -947,7 +947,7 @@ async def _tool_loop(
     """
     for _ in range(MAX_TOOL_ROUNDS):
         reply = await ctx.llm.complete(
-            messages, tools=tool_schemas(ctx.agenda_enabled, bool(getattr(ctx.crm, "supports_agenda_v2", False)), bool(getattr(ctx.crm, "supports_coordination", False)), media=bool(ctx.settings.send_media_enabled and getattr(ctx.crm, "supports_media", False)), qualify=bool(ctx.settings.qualify_enabled and hasattr(ctx.crm, "qualify")))
+            messages, tools=tool_schemas(ctx.agenda_enabled, bool(getattr(ctx.crm, "supports_agenda_v2", False)), bool(getattr(ctx.crm, "supports_coordination", False)), media=bool(ctx.settings.send_media_enabled and getattr(ctx.crm, "supports_media", False)), qualify=bool(ctx.settings.qualify_enabled and hasattr(ctx.crm, "qualify")), quotes=bool(ctx.settings.quotes_enabled and hasattr(ctx.crm, "create_quote")))
         )
         if not reply.tool_calls:
             return reply.content  # turno de puro texto
