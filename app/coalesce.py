@@ -22,17 +22,22 @@ class Coalescer:
         self._buffers: dict[str, list[Any]] = {}
         self._timers: dict[str, asyncio.Task[None]] = {}
 
-    def add(self, identity: str, item: Any) -> None:
-        """Acumula un mensaje y (re)inicia el timer de la identidad."""
+    def add(self, identity: str, item: Any, seconds: float | None = None) -> None:
+        """Acumula un mensaje y (re)inicia el timer de la identidad.
+
+        `seconds` (Agente → Mensajes del CRM) manda sobre el valor con que se
+        creó el coalescedor; None = el de siempre.
+        """
         self._buffers.setdefault(identity, []).append(item)
         timer = self._timers.get(identity)
         if timer is not None and not timer.done():
             timer.cancel()  # mensaje nuevo → el reloj vuelve a empezar
-        self._timers[identity] = asyncio.create_task(self._fire(identity))
+        espera = self._seconds if seconds is None else max(0.0, float(seconds))
+        self._timers[identity] = asyncio.create_task(self._fire(identity, espera))
 
-    async def _fire(self, identity: str) -> None:
+    async def _fire(self, identity: str, espera: float | None = None) -> None:
         try:
-            await asyncio.sleep(self._seconds)
+            await asyncio.sleep(self._seconds if espera is None else espera)
         except asyncio.CancelledError:
             return  # reiniciado por un mensaje nuevo
         items = self._buffers.pop(identity, [])

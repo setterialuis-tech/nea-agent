@@ -4,6 +4,10 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.7.0 — 2026-10-18
+
+- La espera de agrupación de mensajes (`coalesceSeconds`) también viene de `messaging` en el perfil del CRM (Agente → Mensajes) y manda sobre `COALESCE_SECONDS`.
+
 ## 1.6.0 — 2026-10-18
 
 ### Nuevo

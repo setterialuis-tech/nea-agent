@@ -172,3 +172,46 @@ def test_enviar_partes_en_orden_y_se_detiene_si_el_crm_bloquea():
     assert crm.enviados == ["a"]
     crm = Crm(falla_en=0)
     assert asyncio.run(_enviar_partes(Ctx(crm), 1, "c1", ["a", "b"], 0)) is False
+
+
+def test_perfil_lee_messaging_del_crm():
+    from app.profile import profile_from_payload
+
+    p = profile_from_payload(
+        {
+            "profile": {"name": "Angie"},
+            "messaging": {
+                "coalesceSeconds": 7,
+                "maxPartsAds": 4,
+                "maxPartsOrganic": 1,
+                "partsDelaySeconds": 0.8,
+                "formatWithModel": False,
+            },
+        },
+        "Nea",
+    )
+    assert (p.coalesce_seconds, p.max_parts_ads, p.max_parts_organic) == (7.0, 4, 1)
+    assert p.parts_delay_seconds == 0.8 and p.format_with_model is False
+    # Sin messaging (o con valores absurdos) manda el entorno: todo None.
+    vacio = profile_from_payload({"profile": {}, "messaging": {"maxPartsAds": 99, "coalesceSeconds": -1}}, "Nea")
+    assert vacio.max_parts_ads is None and vacio.coalesce_seconds is None
+    assert profile_from_payload({"profile": {}}, "Nea").format_with_model is None
+
+
+def test_coalescedor_usa_los_segundos_del_crm():
+    from app.coalesce import Coalescer
+
+    async def correr():
+        salidas: list[list] = []
+
+        async def volcar(identidad, items):
+            salidas.append(items)
+
+        c = Coalescer(5.0, volcar)  # el entorno dice 5 s; el CRM manda 0.05
+        c.add("x", "uno", 0.05)
+        c.add("x", "dos", 0.05)
+        await asyncio.sleep(0.3)
+        await c.aclose()
+        return salidas
+
+    assert asyncio.run(correr()) == [["uno", "dos"]]

@@ -257,7 +257,7 @@ async def _process(ctx: AppContext, body: bytes, signature: str | None) -> None:
         if ctx.coalescer is None:
             logger.error("coalescer no inicializado — mensaje descartado")
             continue
-        ctx.coalescer.add(msg.identity, msg)
+        ctx.coalescer.add(msg.identity, msg, await _espera_de_rafaga(ctx))
         typing_identities.add(msg.identity)
 
     # "Escribiendo…" casi inmediato (antes de que cierre el coalesce): la señal
@@ -293,3 +293,18 @@ async def _early_typing(ctx: AppContext, identity: str) -> None:
         await ctx.crm.post_typing(str(conv.crm_conversation_id))
     except Exception as exc:
         logger.debug("typing temprano de %s falló (%s) — sigo", identity, exc)
+
+
+async def _espera_de_rafaga(ctx: AppContext) -> float | None:
+    """Segundos de espera que el dueño fijó en Agente → Mensajes (None = el entorno).
+
+    El perfil sale de la caché de `ProfileProvider` (TTL de 5 min): casi nunca
+    es una ida al CRM, y si falla se sigue con el valor del entorno.
+    """
+    try:
+        from app.profile import resolve_profile
+
+        perfil = await resolve_profile(ctx)
+        return perfil.coalesce_seconds
+    except Exception:  # un fallo de perfil no puede frenar un mensaje
+        return None
