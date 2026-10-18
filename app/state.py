@@ -503,6 +503,11 @@ class AppContext:
     store: Store
     crm: Any  # CrmClient
     llm: Any  # OpenAiLlm o fake con .complete()
+    # Un modelo por función (app/roles.py). None = esa función usa `llm`
+    # (oír, ver) o no existe (dar forma con modelo).
+    audio_llm: Any | None = None
+    vision_llm: Any | None = None
+    format_llm: Any | None = None
     profile: Any | None = None  # ProfileProvider; None en tests = perfil mínimo
     # Modo multi-organización: el registro de clientes por organización.
     # None fuera de ese modo — una Nea de un solo negocio no lo necesita, y

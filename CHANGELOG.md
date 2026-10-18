@@ -4,6 +4,29 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.6.0 — 2026-10-18
+
+### Nuevo
+
+- **Vertex AI** como proveedor: `LLM_PROVIDER=vertex` + `LLM_VERTEX_CREDENTIALS`
+  (JSON de la cuenta de servicio). El token se renueva solo. Modelo recomendado:
+  `google/gemini-2.5-flash`.
+- **Un modelo por función**: conversar, oír audios, ver imágenes (`VISION_MODEL`) y
+  dar forma a la respuesta (`FORMAT_MODEL`), cada uno con su proveedor opcional.
+- **Respuesta en varios mensajes**: se parte por párrafos y listas sin cortar una
+  pregunta ni un enlace, hasta `MAX_PARTS_ADS` (lead de anuncio) o
+  `MAX_PARTS_ORGANIC` mensajes, con pausa entre ellos. Con `FORMAT_MODEL`, un modelo
+  reparte el texto (quita asteriscos decorativos, emojis, listas) y su salida se
+  valida contra el original; si no cuadra, se usan las reglas de código.
+- El CRM puede mandar `messaging` en `GET /api/bot/profile` (máximos de mensajes,
+  espera, pausa y uso del formateador); manda sobre el entorno.
+
+### Arreglado
+
+- Una respuesta con caracteres de otro alfabeto, marcas internas del modelo o una
+  herramienta escrita como texto (DeepSeek vía OpenRouter) ya no llega al lead: se
+  pide otra respuesta y, si vuelve a fallar, silencio + handoff `error`.
+
 ## 1.0.0 — 2026-09-30
 
 Primera versión con número y primera con imagen publicada. Hasta aquí Nea se

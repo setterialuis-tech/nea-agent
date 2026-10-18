@@ -78,7 +78,7 @@ async def _audio(ctx: AppContext, msg: InboundMessage) -> MediaPart:
         return _honest_failure(msg)
     mime_clean = (mime or msg.media_mime or "audio/ogg").split(";")[0].strip()
     ext = _AUDIO_EXT.get(mime_clean, "ogg")
-    transcript = await ctx.llm.transcribe(
+    transcript = await (ctx.audio_llm or ctx.llm).transcribe(
         data, mime_clean, filename=f"nota-de-voz.{ext}"
     )
     kind = "Nota de voz" if msg.media_voice else "Audio"
@@ -99,6 +99,38 @@ async def _image(ctx: AppContext, msg: InboundMessage) -> MediaPart:
         )
     mime_clean = (mime or msg.media_mime or "image/jpeg").split(";")[0].strip()
     uri = f"data:{mime_clean};base64,{base64.b64encode(data).decode()}"
+    if ctx.vision_llm is not None:
+        # Un modelo propio para ver: describe la imagen y el que conversa
+        # recibe solo el texto (sirve cuando el que conversa no ve).
+        try:
+            reply = await ctx.vision_llm.complete(
+                [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Describe en español, en pocas líneas y sin inventar, qué muestra"
+                                    " esta imagen enviada por un paciente o cliente por WhatsApp. Si"
+                                    " es un documento, estudio, receta o captura, transcribe lo"
+                                    " relevante (nombres, cifras, fechas). Responde solo con la"
+                                    " descripción."
+                                ),
+                            },
+                            {"type": "image_url", "image_url": {"url": uri}},
+                        ],
+                    }
+                ]
+            )
+            descripcion = (reply.content or "").strip()
+        except Exception as exc:  # un fallo de visión no rompe el turno
+            logger.warning("visión: falló (%s) — se pasa la imagen al modelo que conversa", exc)
+            descripcion = ""
+        if descripcion:
+            return MediaPart(
+                text=f"[El lead mandó una imagen. Lo que se ve en ella]: {descripcion[:2000]}{caption}"
+            )
     return MediaPart(
         text=f"[El lead mandó una imagen — la tienes adjunta, puedes verla.{caption}]",
         image_data_uri=uri,

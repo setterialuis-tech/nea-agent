@@ -21,6 +21,7 @@ from app.agenda import agenda_vigente
 from app.config import canonical_identity
 from app.crm import CrmConflict, CrmError, CrmUnreachable
 from app.formato import a_whatsapp
+from app.partes import dar_forma_con_modelo, partir
 from app.hostility import ALERT as HOSTILITY_ALERT, hostile_streak
 from app.llm import LlmExhausted
 from app.stall import (
@@ -690,9 +691,15 @@ async def run_turn(
     if final_text and final_text.strip():
         final_text = a_whatsapp(runtime.finalize_reply(final_text.strip()))
     if final_text and final_text.strip():
-        sent = await _send(ctx, conv.id, str(crm_conv_id), final_text)
+        partes = await _repartir(ctx, profile, final_text, de_anuncio=bool(referral))
+        sent = await _enviar_partes(
+            ctx, conv.id, str(crm_conv_id), partes,
+            profile.parts_delay_seconds
+            if profile.parts_delay_seconds is not None
+            else settings.parts_delay_seconds,
+        )
         if sent:
-            await ctx.store.add_message(conv.id, "assistant", final_text)
+            await ctx.store.add_message(conv.id, "assistant", "\n\n".join(partes))
             # Los archivos van SIEMPRE después de la frase que los introduce.
             await _enviar_medios(ctx, conv.id, str(crm_conv_id), runtime.media_queue)
 
@@ -894,6 +901,19 @@ async def _empujar_relay(ctx: AppContext) -> None:
 
 
 REPETICION_MIN = 40
+# CJK, cirílico, bengalí, árabe, tailandés, devanágari: nada de eso es un mensaje
+# legítimo de Nea a un lead de habla hispana.
+_OTRO_ALFABETO = re.compile(
+    "[Ѐ-ӿ؀-ۿऀ-ॿঀ-৿฀-๿"
+    "぀-ヿ㐀-鿿가-힯]"
+)
+_TOKEN_INTERNO = re.compile(r"<[｜|][^>\n]{0,40}[｜|]>")
+_HERRAMIENTA_EN_TEXTO = re.compile(
+    r"\b(?:update_ficha|propose_slots|book_session|reschedule_session|route_out|"
+    r"send_media|qualify_lead|create_quote)\b|```\s*json|\"function\"\s*:|"
+    r"\b(?:ejecutar[eé]|accionando|llamar[eé])\b[^.\n]{0,40}\bherramienta\b",
+    re.I,
+)
 CORRIGE_RESPUESTA = (
     "Ese texto NO se le envió al lead: {motivo}. Escribe ahora el mensaje de "
     "WhatsApp que responde a su ÚLTIMO mensaje, en tu voz y sin repetir nada "
@@ -918,6 +938,15 @@ def _respuesta_invalida(texto: str | None, previos: list[str]) -> str | None:
     plano = " ".join(a_whatsapp(texto).split())
     if re.fullmatch(r"[(\[].*[)\]]", plano):
         return "era una nota interna entre paréntesis"
+    # Basura de modelo que el lead vería: caracteres de otro alfabeto, tokens
+    # internos y la llamada a una herramienta escrita como texto. Ningún
+    # prompt lo evita del todo (DeepSeek vía OpenRouter, oct-2026).
+    if _OTRO_ALFABETO.search(plano):
+        return "traía caracteres de otro idioma"
+    if _TOKEN_INTERNO.search(texto):
+        return "traía marcas internas del modelo"
+    if _HERRAMIENTA_EN_TEXTO.search(texto):
+        return "mencionaba una herramienta o su llamada como texto"
     # Un «¡Va!» o un «Perfecto 👍» pueden repetirse sin que nadie lo note; un
     # mensaje con contenido repetido entero, no.
     if len(plano) >= REPETICION_MIN and any(
@@ -983,6 +1012,44 @@ async def _tool_loop(
 
 
 SEND_ATTEMPTS = 4  # backoff 1 s, 2 s, 4 s entre intentos (~7 s en el turno)
+
+
+async def _repartir(
+    ctx: AppContext, profile: Any, texto: str, *, de_anuncio: bool
+) -> list[str]:
+    """El texto en hasta N mensajes. N: Agente → Mensajes del CRM, o el entorno.
+
+    Un lead de anuncio admite más mensajes cortos que uno orgánico. Con modelo
+    formateador (FORMAT_MODEL) se usa primero; si su salida no valida, reglas
+    de código. Nunca devuelve una lista vacía.
+    """
+    s = ctx.settings
+    if de_anuncio:
+        maximo = profile.max_parts_ads if profile.max_parts_ads is not None else s.max_parts_ads
+    else:
+        maximo = (
+            profile.max_parts_organic
+            if profile.max_parts_organic is not None
+            else s.max_parts_organic
+        )
+    partes: list[str] | None = None
+    if ctx.format_llm is not None and profile.format_with_model is not False:
+        partes = await dar_forma_con_modelo(ctx.format_llm, texto, maximo)
+    return partes or partir(texto, maximo) or [texto]
+
+
+async def _enviar_partes(
+    ctx: AppContext, conv_id: int, crm_conv_id: str, partes: list[str], pausa: float
+) -> bool:
+    """Envía los mensajes en orden, con una pausa entre uno y otro. True si salió alguno."""
+    salio = False
+    for i, parte in enumerate(partes):
+        if i:
+            await asyncio.sleep(pausa)
+        if not await _send(ctx, conv_id, crm_conv_id, parte):
+            break
+        salio = True
+    return salio
 
 
 async def _send(ctx: AppContext, conv_id: int, crm_conv_id: str, text: str) -> bool:

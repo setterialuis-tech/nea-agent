@@ -92,6 +92,7 @@ class OpenAiLlm:
         reasoning_effort: str = "",
         provider_sort: str = "",
         timeout: float = DEFAULT_TIMEOUT,
+        token_source: Any | None = None,
     ) -> None:
         # base_url ≠ None → proveedor OpenAI-compatible (p. ej. OpenRouter,
         # para el bench de modelos del 002). Ojo: la transcripción de audio
@@ -121,15 +122,25 @@ class OpenAiLlm:
         # cada llamada; `_extras_ok` los apaga solos si el proveedor se queja.
         self._reasoning_effort = reasoning_effort.strip()
         self._provider_sort = provider_sort.strip()
-        self._extras_ok = True
+        # Vertex: la «llave» es un token que caduca. Se renueva antes de cada
+        # llamada (barato: lo guarda hasta 5 min antes de que venza). Y no
+        # entiende los extras de OpenRouter (`provider`), así que no se mandan.
+        self._token_source = token_source
+        self._extras_ok = token_source is None
+        self._vertex_razonamiento_ok = True
         # Con proveedor propio (OpenRouter y compañía) no hay endpoint de
         # transcripción: el audio se manda DENTRO del chat, a un modelo que
         # sepa oír. Se decide aquí y no en cada llamada para que el camino sea
         # el mismo durante toda la vida del proceso.
-        self._audio_por_chat = base_url is not None
+        self._audio_por_chat = base_url is not None or token_source is not None
         # Contadores de uso (para el bench de costos del 002): tokens reales
         # reportados por el proveedor, acumulados por instancia.
         self.usage = {"prompt": 0, "cached": 0, "completion": 0, "llamadas": 0}
+
+    async def _credencial(self) -> None:
+        """Con Vertex, pone el token vigente en el cliente antes de llamar."""
+        if self._token_source is not None:
+            self._client.api_key = await self._token_source.token()
 
     async def transcribe(
         self, data: bytes, mime: str, filename: str = "audio.ogg"
@@ -189,6 +200,7 @@ class OpenAiLlm:
 
         for attempt in range(2):
             try:
+                await self._credencial()
                 resp = await self._client.chat.completions.create(
                     model=self._transcribe_model,
                     messages=[
@@ -260,9 +272,18 @@ class OpenAiLlm:
         Es pegajoso a proposito -el soporte del modelo no cambia a media vida
         del proceso- y por organizacion, porque cada una tiene el suyo.
         """
+        texto = str(exc).lower()
+        if self._token_source is not None:
+            # Vertex rechazó el esfuerzo de razonamiento: se deja de mandar.
+            if self._vertex_razonamiento_ok and "reasoning" in texto:
+                self._vertex_razonamiento_ok = False
+                logger.warning(
+                    "llm: %s no acepta reasoning_effort - se apaga y se reintenta",
+                    self._model,
+                )
+            return
         if not self._extras_ok:
             return
-        texto = str(exc).lower()
         if "reasoning" in texto or "provider" in texto:
             self._extras_ok = False
             logger.warning(
@@ -286,6 +307,15 @@ class OpenAiLlm:
                 extra = self._extras()
                 if extra:
                     kwargs["extra_body"] = extra
+                if (
+                    self._token_source is not None
+                    and self._reasoning_effort
+                    and self._vertex_razonamiento_ok
+                ):
+                    # Vertex sí entiende `reasoning_effort` del contrato OpenAI
+                    # (minimal, low, medium, high, max).
+                    kwargs["reasoning_effort"] = self._reasoning_effort
+                await self._credencial()
                 resp = await self._client.chat.completions.create(
                     model=self._model, messages=messages, **kwargs
                 )

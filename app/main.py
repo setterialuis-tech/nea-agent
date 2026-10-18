@@ -28,6 +28,7 @@ from app.dispatch_worker import run as run_dispatch_worker
 from app.db import PgStore
 from app.followup import FollowupWorker
 from app.llm import OpenAiLlm
+from app import roles
 from app.multiorg import (
     CrmSinOrganizacion,
     LlmSinOrganizacion,
@@ -168,16 +169,29 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
                 llm=(
                     LlmSinOrganizacion()
                     if settings.multi_org
-                    else OpenAiLlm(
-                        settings.llm_api_key,
-                        settings.llm_model,
-                        transcribe_model=settings.llm_transcribe_model,
-                        base_url=settings.llm_base_url or None,
-                        reasoning_effort=settings.llm_reasoning_effort,
-                        provider_sort=settings.llm_provider_sort,
-                        timeout=settings.llm_timeout_seconds,
+                    else (
+                        roles.construir(settings, "conversacion")
+                        if settings.llm_provider.strip()
+                        else OpenAiLlm(
+                            settings.llm_api_key,
+                            settings.llm_model,
+                            transcribe_model=settings.llm_transcribe_model,
+                            base_url=settings.llm_base_url or None,
+                            reasoning_effort=settings.llm_reasoning_effort,
+                            provider_sort=settings.llm_provider_sort,
+                            timeout=settings.llm_timeout_seconds,
+                        )
                     )
                 ),
+                # Oír, ver y dar forma: solo si se configuró algo propio.
+                audio_llm=(
+                    roles.construir(settings, "audio")
+                    if not settings.multi_org
+                    and (settings.audio_provider.strip() or settings.llm_provider.strip() == "vertex")
+                    else None
+                ),
+                vision_llm=(None if settings.multi_org else roles.construir(settings, "vision")),
+                format_llm=(None if settings.multi_org else roles.construir(settings, "formato")),
                 # En multi-organización el perfil es de cada negocio y lo
                 # sirve el registro; un proveedor global aquí serviría el
                 # perfil de uno a todos.

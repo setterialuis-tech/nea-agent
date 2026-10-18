@@ -162,6 +162,51 @@ class Settings(BaseSettings):
     # llamada entera. Un turno de 53 s. El tope convertía UNA llamada lenta en
     # DOS. Se quitó el mismo día.
 
+    # ── Vertex AI y modelos por función ───────────────────────────────
+    #
+    # Cada función del agente puede tener su propio modelo:
+    #   · conversar  → LLM_MODEL (arriba)
+    #   · oír audios → LLM_TRANSCRIBE_MODEL   (y AUDIO_*  para otro proveedor)
+    #   · ver fotos  → VISION_MODEL           (VISION_* ; vacío = ve el que conversa)
+    #   · dar forma a la respuesta → FORMAT_MODEL (FORMAT_* ; vacío = solo reglas
+    #     de código, sin segundo modelo)
+    #
+    # LLM_PROVIDER="vertex" usa la cuenta de servicio de Google de
+    # LLM_VERTEX_CREDENTIALS (JSON, secreto). Las funciones con su propio
+    # `*_PROVIDER` ("" = el mismo que conversa; "vertex"; "openrouter";
+    # "openai") y `*_API_KEY` (vacía = la de LLM_API_KEY).
+    llm_provider: str = Field(default="", validation_alias=AliasChoices("LLM_PROVIDER"))
+    llm_vertex_credentials: str = Field(
+        default="", validation_alias=AliasChoices("LLM_VERTEX_CREDENTIALS")
+    )
+    llm_vertex_region: str = Field(
+        default="us-central1", validation_alias=AliasChoices("LLM_VERTEX_REGION")
+    )
+    llm_vertex_project: str = Field(
+        default="", validation_alias=AliasChoices("LLM_VERTEX_PROJECT")
+    )
+
+    audio_provider: str = ""
+    audio_api_key: str = ""
+    audio_base_url: str = ""
+    vision_provider: str = ""
+    vision_model: str = ""
+    vision_api_key: str = ""
+    vision_base_url: str = ""
+    format_provider: str = ""
+    format_model: str = ""
+    format_api_key: str = ""
+    format_base_url: str = ""
+
+    # ── Cómo se parte la respuesta en mensajes ────────────────────────
+    # Un lead que llegó por un anuncio tiene ventana larga y tolera varios
+    # mensajes cortos; uno orgánico, mejor pocos. El CRM puede mandar estos
+    # valores desde Agente → Mensajes y mandan sobre estos.
+    max_parts_ads: int = Field(default=3, ge=1, le=6)
+    max_parts_organic: int = Field(default=2, ge=1, le=6)
+    # Pausa entre un mensaje y el siguiente ("escribiendo…").
+    parts_delay_seconds: float = Field(default=1.2, ge=0, le=10)
+
     history_window: int = 10
 
     # Cada cuántos segundos, como mucho, se le vuelve a preguntar al CRM si

@@ -48,6 +48,12 @@ class BusinessProfile:
     greeting: str | None = None
     kb_text: str | None = None
     resources: list[dict[str, str]] = field(default_factory=list)
+    # Agente → Mensajes en el CRM. None = lo que diga el entorno de Nea.
+    max_parts_ads: int | None = None
+    max_parts_organic: int | None = None
+    coalesce_seconds: float | None = None
+    parts_delay_seconds: float | None = None
+    format_with_model: bool | None = None
 
     @property
     def has_knowledge(self) -> bool:
@@ -66,7 +72,21 @@ def profile_from_payload(payload: dict[str, Any], default_name: str) -> Business
         for r in resources_raw
         if isinstance(r, dict) and r.get("url")
     ]
+    msg = payload.get("messaging") or {}
+
+    def _num(clave: str, tipo: type, minimo: float, maximo: float) -> Any:
+        try:
+            v = tipo(msg.get(clave))
+        except (TypeError, ValueError):
+            return None
+        return v if minimo <= v <= maximo else None
+
     return BusinessProfile(
+        max_parts_ads=_num("maxPartsAds", int, 1, 6),
+        max_parts_organic=_num("maxPartsOrganic", int, 1, 6),
+        coalesce_seconds=_num("coalesceSeconds", float, 0, 60),
+        parts_delay_seconds=_num("partsDelaySeconds", float, 0, 10),
+        format_with_model=msg.get("formatWithModel") if isinstance(msg.get("formatWithModel"), bool) else None,
         cloud=prof.get("cloud") is True,
         config_version=int(prof.get("configVersion") or 1),
         agent_name=str(prof.get("name") or default_name),

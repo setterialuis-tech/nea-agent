@@ -11,3 +11,5 @@ openai==2.54.0
 pydantic-settings==2.15.0
 tzdata==2026.4
 pypdf==6.19.0
+google-auth==2.62.0  # Vertex AI: token de la cuenta de servicio (app/vertex.py)
+requests==2.34.2  # transporte síncrono de google-auth para renovar el token
