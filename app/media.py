@@ -19,6 +19,7 @@ from pathlib import Path
 
 from dataclasses import dataclass
 
+from app import roles
 from app.state import AppContext, InboundMessage
 
 logger = logging.getLogger("nea.media")
@@ -78,7 +79,7 @@ async def _audio(ctx: AppContext, msg: InboundMessage) -> MediaPart:
         return _honest_failure(msg)
     mime_clean = (mime or msg.media_mime or "audio/ogg").split(";")[0].strip()
     ext = _AUDIO_EXT.get(mime_clean, "ogg")
-    transcript = await (ctx.audio_llm or ctx.llm).transcribe(
+    transcript = await (await roles.llm_de(ctx, "audio")).transcribe(
         data, mime_clean, filename=f"nota-de-voz.{ext}"
     )
     kind = "Nota de voz" if msg.media_voice else "Audio"
@@ -99,11 +100,12 @@ async def _image(ctx: AppContext, msg: InboundMessage) -> MediaPart:
         )
     mime_clean = (mime or msg.media_mime or "image/jpeg").split(";")[0].strip()
     uri = f"data:{mime_clean};base64,{base64.b64encode(data).decode()}"
-    if ctx.vision_llm is not None:
+    vision_llm = await roles.llm_de(ctx, "vision")
+    if vision_llm is not None:
         # Un modelo propio para ver: describe la imagen y el que conversa
         # recibe solo el texto (sirve cuando el que conversa no ve).
         try:
-            reply = await ctx.vision_llm.complete(
+            reply = await vision_llm.complete(
                 [
                     {
                         "role": "user",

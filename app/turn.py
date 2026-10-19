@@ -16,7 +16,7 @@ from datetime import timedelta
 from typing import Any, AsyncIterator
 from zoneinfo import ZoneInfo
 
-from app import media
+from app import media, roles
 from app.agenda import agenda_vigente
 from app.config import canonical_identity
 from app.crm import CrmConflict, CrmError, CrmUnreachable
@@ -974,8 +974,10 @@ async def _tool_loop(
     pregunta. Sin él a la vista, el modelo escribe la respuesta completa ya
     con el resultado de la herramienta, que es lo que siempre hizo bien.
     """
+    # El modelo que conversa: el de Ajustes → IA del CRM si lo mandó, si no el del entorno.
+    llm = await roles.llm_de(ctx, "conversacion")
     for _ in range(MAX_TOOL_ROUNDS):
-        reply = await ctx.llm.complete(
+        reply = await llm.complete(
             messages, tools=tool_schemas(ctx.agenda_enabled, bool(getattr(ctx.crm, "supports_agenda_v2", False)), bool(getattr(ctx.crm, "supports_coordination", False)), media=bool(ctx.settings.send_media_enabled and getattr(ctx.crm, "supports_media", False)), qualify=bool(ctx.settings.qualify_enabled and hasattr(ctx.crm, "qualify")), quotes=bool(ctx.settings.quotes_enabled and hasattr(ctx.crm, "create_quote")))
         )
         if not reply.tool_calls:
@@ -1033,8 +1035,9 @@ async def _repartir(
             else s.max_parts_organic
         )
     partes: list[str] | None = None
-    if ctx.format_llm is not None and profile.format_with_model is not False:
-        partes = await dar_forma_con_modelo(ctx.format_llm, texto, maximo)
+    format_llm = roles.llm_de_perfil(ctx, profile, "formato")
+    if format_llm is not None and profile.format_with_model is not False:
+        partes = await dar_forma_con_modelo(format_llm, texto, maximo)
     return partes or partir(texto, maximo) or [texto]
 
 

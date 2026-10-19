@@ -9,7 +9,10 @@ token y lo renueva solo.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
+from urllib.parse import urlparse
 from typing import Any
 
 from app.config import Settings
@@ -25,11 +28,14 @@ FUNCIONES = ("conversacion", "audio", "vision", "formato")
 _token: dict[str, Any] = {}
 
 
-def _vertex_token(settings: Settings) -> vertex.VertexToken:
-    clave = settings.llm_vertex_credentials
+def _vertex_token_de(clave: str) -> vertex.VertexToken:
     if clave not in _token:
         _token[clave] = vertex.VertexToken(vertex.leer_credenciales(clave))
     return _token[clave]
+
+
+def _vertex_token(settings: Settings) -> vertex.VertexToken:
+    return _vertex_token_de(settings.llm_vertex_credentials)
 
 
 def _vertex_url(settings: Settings, token: vertex.VertexToken) -> str:
@@ -109,3 +115,95 @@ def construir(settings: Settings, funcion: str) -> OpenAiLlm | None:
         timeout=settings.llm_timeout_seconds or DEFAULT_TIMEOUT,
         token_source=token,
     )
+
+
+# ── Modelos que manda el CRM (Ajustes → IA, un modelo por función) ──────────
+#
+# El CRM puede dar, por función, proveedor + base + modelo + llave
+# (`BusinessProfile.modelos`). Mandan sobre el entorno de Nea; lo que el CRM no
+# mande se queda como estaba. Un cliente por configuración distinta: cambiar el
+# modelo en el CRM crea uno nuevo en el turno siguiente (el perfil se relee cada
+# pocos minutos) y el anterior se descarta con el siguiente cambio.
+
+_desde_crm: dict[str, tuple[str, OpenAiLlm]] = {}
+
+
+def _huella(cfg: dict[str, str]) -> str:
+    """Identifica una configuración sin guardar la llave en claro como clave."""
+    datos = "\x00".join(cfg.get(k, "") for k in ("provider", "baseUrl", "model", "apiKey"))
+    return hashlib.sha256(datos.encode()).hexdigest()
+
+
+def _raiz_openai(base_url: str) -> str:
+    """La raíz de una API compatible con OpenAI (la misma regla que el CRM)."""
+    sin_barra = base_url.strip().rstrip("/")
+    host = (urlparse(sin_barra).hostname or "").lower()
+    if host.endswith("googleapis.com") or re.search(r"/v1$", sin_barra, re.I):
+        return sin_barra
+    return f"{sin_barra}/v1"
+
+
+def construir_desde_crm(settings: Settings, funcion: str, cfg: dict[str, str]) -> OpenAiLlm:
+    """El cliente de una función según lo que mandó el CRM."""
+    prov = cfg.get("provider", "").strip().lower()
+    modelo = cfg["model"]
+    token = None
+    api_key = cfg["apiKey"]
+    base_url = _raiz_openai(cfg["baseUrl"])
+    sort = settings.llm_provider_sort if prov == "openrouter" else ""
+    if prov == "vertex":
+        token = _vertex_token_de(api_key)
+        base_url = cfg["baseUrl"].strip().rstrip("/")
+        api_key = "vertex"  # se cambia por el token antes de cada llamada
+    reasoning = "minimal" if funcion == "formato" else settings.llm_reasoning_effort
+    return OpenAiLlm(
+        api_key,
+        modelo,
+        transcribe_model=modelo,
+        base_url=base_url,
+        reasoning_effort=reasoning,
+        provider_sort=sort,
+        timeout=settings.llm_timeout_seconds or DEFAULT_TIMEOUT,
+        token_source=token,
+    )
+
+
+def llm_de_perfil(ctx: Any, profile: Any, funcion: str) -> Any | None:
+    """El cliente de la función: el del CRM si lo mandó, si no el del entorno.
+
+    Sin modelo propio devuelve lo de siempre: `ctx.llm` para conversar y oír,
+    `ctx.vision_llm` / `ctx.format_llm` (que pueden ser None = esa función no
+    tiene modelo y se resuelve como antes). Un modelo del CRM que no se pueda
+    construir (JSON de Vertex roto…) se registra y se cae al entorno: un ajuste
+    mal puesto no tumba el turno.
+    """
+    base = {
+        "conversacion": ctx.llm,
+        "audio": ctx.audio_llm or ctx.llm,
+        "vision": ctx.vision_llm,
+        "formato": ctx.format_llm,
+    }[funcion]
+    if getattr(ctx.settings, "multi_org", False):
+        return base
+    cfg = (getattr(profile, "modelos", None) or {}).get(funcion)
+    if not cfg:
+        return base
+    huella = _huella(cfg)
+    hecho = _desde_crm.get(funcion)
+    if hecho and hecho[0] == huella:
+        return hecho[1]
+    try:
+        cliente = construir_desde_crm(ctx.settings, funcion, cfg)
+    except Exception as exc:  # llave o JSON inválidos: se sigue con el entorno
+        logger.warning("modelo del CRM para «%s» no sirve (%s) — uso el del entorno", funcion, type(exc).__name__)
+        return base
+    _desde_crm[funcion] = (huella, cliente)
+    logger.info("modelo de «%s» tomado del CRM: %s (%s)", funcion, cfg["model"], cfg.get("provider", ""))
+    return cliente
+
+
+async def llm_de(ctx: Any, funcion: str) -> Any | None:
+    """Como `llm_de_perfil`, resolviendo el perfil vigente del contexto."""
+    from app.profile import resolve_profile
+
+    return llm_de_perfil(ctx, await resolve_profile(ctx), funcion)

@@ -13,6 +13,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
+from app import roles
 from app.crm import CrmConflict, CrmError
 from app.formato import a_whatsapp
 from app.llm import LlmExhausted
@@ -162,7 +163,8 @@ class FollowupWorker:
             + [{"role": "system", "content": FOLLOWUP_INSTRUCTION}]
         )
         try:
-            reply = await ctx.llm.complete(messages, tools=None)
+            llm = await roles.llm_de(ctx, "conversacion")
+            reply = await llm.complete(messages, tools=None)
         except LlmExhausted as exc:
             logger.warning("followup %s: LLM agotado (%s) — omitido", conv.wa_identity, exc)
             return

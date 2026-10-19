@@ -54,10 +54,35 @@ class BusinessProfile:
     coalesce_seconds: float | None = None
     parts_delay_seconds: float | None = None
     format_with_model: bool | None = None
+    # Ajustes → IA del CRM, un modelo por función (conversacion, formato, audio,
+    # vision). Trae llaves: nunca se imprime (`repr=False`) ni se guarda en disco.
+    # Vacío = cada función usa lo que diga el entorno de Nea.
+    modelos: dict[str, dict[str, str]] = field(default_factory=dict, repr=False)
 
     @property
     def has_knowledge(self) -> bool:
         return bool((self.instructions or "").strip() or (self.kb_text or "").strip())
+
+
+FUNCIONES_CON_MODELO = ("conversacion", "formato", "audio", "vision")
+
+
+def _modelos_de(crudo: Any) -> dict[str, dict[str, str]]:
+    """Los modelos por función que manda el CRM, solo los completos y conocidos."""
+    if not isinstance(crudo, dict):
+        return {}
+    salida: dict[str, dict[str, str]] = {}
+    for funcion in FUNCIONES_CON_MODELO:
+        cfg = crudo.get(funcion)
+        if not isinstance(cfg, dict):
+            continue
+        limpio = {
+            clave: str(cfg.get(clave) or "").strip()
+            for clave in ("provider", "baseUrl", "model", "apiKey")
+        }
+        if limpio["model"] and limpio["apiKey"] and limpio["baseUrl"]:
+            salida[funcion] = limpio
+    return salida
 
 
 def profile_from_payload(payload: dict[str, Any], default_name: str) -> BusinessProfile:
@@ -82,6 +107,7 @@ def profile_from_payload(payload: dict[str, Any], default_name: str) -> Business
         return v if minimo <= v <= maximo else None
 
     return BusinessProfile(
+        modelos=_modelos_de(payload.get("models")),
         max_parts_ads=_num("maxPartsAds", int, 1, 6),
         max_parts_organic=_num("maxPartsOrganic", int, 1, 6),
         coalesce_seconds=_num("coalesceSeconds", float, 0, 60),

@@ -4,6 +4,17 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.8.0 — 2026-10-19
+
+- **Modelo por función desde el CRM.** `GET /api/bot/profile` puede traer `models`
+  (conversacion, formato, audio, vision), cada uno con proveedor, base, modelo y llave
+  — se configuran en el CRM (Ajustes → IA, una tarjeta por función) y mandan sobre el
+  entorno de Nea. Lo que el CRM no mande se queda como estaba (`LLM_MODEL`,
+  `FORMAT_MODEL`, `LLM_TRANSCRIBE_MODEL`, `VISION_MODEL`). Los cambios llegan en un
+  máximo de 5 minutos (la caché del perfil), sin redesplegar. Un modelo del CRM que no
+  se pueda construir se registra (sin la llave) y se usa el del entorno. Las llaves
+  viven solo en memoria. Necesita CRM 1.18.0.
+
 ## 1.7.0 — 2026-10-18
 
 - La espera de agrupación de mensajes (`coalesceSeconds`) también viene de `messaging` en el perfil del CRM (Agente → Mensajes) y manda sobre `COALESCE_SECONDS`.
