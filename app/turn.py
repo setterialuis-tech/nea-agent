@@ -33,6 +33,7 @@ from app.stall import (
 )
 from app.profile import resolve_profile
 from app.prompt import build_system_prompt
+from app.sincronia import quitar_marcas, sincronizar_historial
 from app.state import AppContext, InboundMessage, utcnow
 from app.tools import ToolRuntime, tool_schemas
 
@@ -532,6 +533,20 @@ async def run_turn(
     if not crm_conv_id:
         logger.warning("turno %s: contexto sin conversationId — silencio", identity)
         return
+    # Memoria al día ANTES de decidir nada: lo que el CRM envió (campañas,
+    # plantillas, un humano) o recibió con la IA apagada. Si el turno va a
+    # responder, él mismo guarda los entrantes de esta ráfaga; si no, esos
+    # también se incorporan aquí (si no, con la IA apagada se perderían).
+    va_a_responder = bool(
+        conversation_info.get("aiEnabled", False)
+        and conversation_info.get("windowOpen", False)
+    )
+    await sincronizar_historial(
+        ctx,
+        conv,
+        str(crm_conv_id),
+        excluir=[m.wa_message_id for m in inbound] if va_a_responder else (),
+    )
     if not conversation_info.get("aiEnabled", False):
         logger.info("turno %s: aiEnabled=false (handoff activo) — silencio", identity)
         return
@@ -689,7 +704,9 @@ async def run_turn(
     # el formato que el lead ve roto (app/formato.py).
     sent = False
     if final_text and final_text.strip():
-        final_text = a_whatsapp(runtime.finalize_reply(final_text.strip()))
+        final_text = a_whatsapp(
+            quitar_marcas(runtime.finalize_reply(final_text.strip()))
+        )
     if final_text and final_text.strip():
         partes = await _repartir(ctx, profile, final_text, de_anuncio=bool(referral))
         sent = await _enviar_partes(

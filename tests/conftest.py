@@ -228,6 +228,10 @@ def mock_crm_basics(respx_mock: Any, **context_kwargs: Any) -> dict[str, Any]:
         "context": respx_mock.get(f"{CRM_URL}/api/bot/context").mock(
             return_value=httpx.Response(200, json=crm_context(**context_kwargs))
         ),
+        # Historial del CRM (sincronía): vacío salvo que la prueba lo ponga.
+        "history": respx_mock.get(f"{CRM_URL}/api/bot/messages").mock(
+            return_value=httpx.Response(200, json={"messages": [], "hasMore": False})
+        ),
         "messages": respx_mock.post(f"{CRM_URL}/api/bot/messages").mock(
             return_value=httpx.Response(200, json={"messageId": "msg_1"})
         ),

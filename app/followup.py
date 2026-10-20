@@ -19,6 +19,7 @@ from app.formato import a_whatsapp
 from app.llm import LlmExhausted
 from app.profile import resolve_profile
 from app.prompt import FOLLOWUP_INSTRUCTION, build_system_prompt
+from app.sincronia import quitar_marcas, sincronizar_historial
 from app.state import AppContext, Conversation, utcnow
 from app.multiorg import ctx_de_organizacion
 from app.turn import conversation_lock
@@ -154,6 +155,7 @@ class FollowupWorker:
             tz=_agent_tz(ctx.settings),
             recordatorios=bool(getattr(ctx.crm, "supports_agenda_v2", False)),
         )
+        await sincronizar_historial(ctx, conv, str(crm_conv_id))
         history = await ctx.store.recent_messages(
             conv.id, ctx.settings.history_window
         )
@@ -170,7 +172,7 @@ class FollowupWorker:
             return
         # Igual que el turno: WhatsApp no pinta Markdown (app/formato.py), y
         # el historial guarda lo que el lead de verdad recibió.
-        text = a_whatsapp((reply.content or "").strip())
+        text = a_whatsapp(quitar_marcas((reply.content or "").strip()))
         if not text:
             logger.warning("followup %s: LLM sin texto — omitido", conv.wa_identity)
             return

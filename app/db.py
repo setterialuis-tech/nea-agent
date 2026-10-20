@@ -41,6 +41,7 @@ def _conv_from_row(row: asyncpg.Record) -> Conversation:
         last_inbound_at=row["last_inbound_at"],
         stalled_at=row["stalled_at"],
         stall_since_message_id=row["stall_since_message_id"],
+        crm_sync_cursor=row["crm_sync_cursor"],
         organization_id=row["organization_id"],
         organization_slug=row["organization_slug"],
     )
@@ -352,11 +353,43 @@ class PgStore(PgDispatchStore):
                 content=r["content"],
                 wa_message_id=r["wa_message_id"],
                 created_at=r["created_at"],
+                source=r["source"],
             )
             for r in reversed(rows)
         ]
 
     # -------------------------------------------------------------- slots ---
+
+    async def importar_historial_crm(
+        self,
+        conversation_id: int,
+        entradas: list[tuple[str, str, str, str]],
+        cursor: str,
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                for rol, contenido, clave, fuente in entradas:
+                    await conn.execute(
+                        """
+                        INSERT INTO bot_message
+                          (conversation_id, role, content, wa_message_id, source)
+                        SELECT $1, $2, $3, $4, $5
+                        WHERE NOT EXISTS (
+                          SELECT 1 FROM bot_message
+                          WHERE conversation_id = $1 AND wa_message_id = $4
+                        )
+                        """,
+                        conversation_id,
+                        rol,
+                        contenido,
+                        clave,
+                        fuente,
+                    )
+                await conn.execute(
+                    "UPDATE bot_conversation SET crm_sync_cursor = $2 WHERE id = $1",
+                    conversation_id,
+                    cursor,
+                )
 
     async def media_ya_enviada(self, conversation_id: int, url: str) -> bool:
         async with self.pool.acquire() as conn:

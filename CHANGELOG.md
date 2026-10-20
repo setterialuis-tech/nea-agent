@@ -4,6 +4,10 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.9.0 — 2026-10-20
+
+- **Memoria completa.** Al empezar cada turno (y antes de un seguimiento) Nea pide al CRM los mensajes posteriores al último que ya vio (`GET /api/bot/messages`, por cursor) y los incorpora a su historial: campañas, plantillas, seguimientos, recordatorios, el chat de un humano y lo que el paciente escribió con la IA apagada. Lo de origen CRM entra con una marca (`[Plantilla enviada]`, `[Mensaje del equipo]`) que Nea nunca repite al lead. Sin duplicados (filas y cursor se escriben juntos). Migración `010` (columnas nuevas, idempotente). Necesita CRM 1.21.x; con un CRM anterior se degrada sin error (404 → sigue como antes).
+
 ## 1.8.0 — 2026-10-19
 
 - **Modelo por función desde el CRM.** `GET /api/bot/profile` puede traer `models`

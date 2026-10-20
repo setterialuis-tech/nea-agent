@@ -217,6 +217,33 @@ class CrmClient:
         data: dict[str, Any] = resp.json()
         return data
 
+    async def get_history(
+        self,
+        conversation_id: str,
+        after: str | None = None,
+        after_id: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any] | None:
+        """Mensajes de la conversación (todos los orígenes), por cursor.
+
+        None si el CRM no ofrece el endpoint (versión anterior) o no conoce la
+        conversación: quien llama sigue sin sincronizar.
+        """
+        params: dict[str, Any] = {"conversationId": conversation_id, "limit": limit}
+        if after:
+            params["after"] = after
+            if after_id:
+                params["afterId"] = after_id
+        resp = await self._request("GET", "/api/bot/messages", params=params)
+        if resp.status_code in (404, 405):
+            return None
+        if es_caida(resp.status_code):
+            raise CrmUnreachable(f"messages (historial) devolvió {resp.status_code}")
+        if resp.status_code != 200:
+            raise CrmError(f"messages (historial) devolvió {resp.status_code}")
+        data: dict[str, Any] = resp.json()
+        return data
+
     async def get_profile(self) -> dict[str, Any] | None:
         """Agent profile + knowledge base del negocio; None si el CRM no lo
         expone todavía (404) — el bot cae al brief local (app/profile.py)."""

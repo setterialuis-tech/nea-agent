@@ -403,6 +403,7 @@ def test_el_mapeo_de_conversacion_no_se_deja_ninguna_columna():
         "last_inbound_at": ahora,
         "stalled_at": None,
         "stall_since_message_id": 7,
+        "crm_sync_cursor": "2026-10-01T15:00:00.000Z|m1",
     }
     conv = _conv_from_row(fila)
 

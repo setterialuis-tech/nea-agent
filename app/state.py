@@ -38,6 +38,7 @@ COLUMNAS_DE_CONVERSACION = frozenset(
         "last_inbound_at",
         "stalled_at",
         "stall_since_message_id",
+        "crm_sync_cursor",
     }
 )
 
@@ -70,6 +71,9 @@ class Conversation:
     # El candado cuenta solo los mensajes con id mayor a este: se mueve al
     # reabrir, para que el hilo viejo no vuelva a disparar el cierre.
     stall_since_message_id: int = 0
+    # «<createdAt>|<id>» del último mensaje del CRM ya incorporado a la memoria
+    # (app/sincronia.py). None = aún no se ha sincronizado.
+    crm_sync_cursor: str | None = None
 
 
 @dataclass
@@ -80,6 +84,9 @@ class BotMessage:
     content: str
     wa_message_id: str | None = None
     created_at: datetime = field(default_factory=utcnow)
+    # None = la escribió Nea; crm_user / crm_template / crm_operator /
+    # crm_manual = vino del CRM (app/sincronia.py).
+    source: str | None = None
 
 
 @dataclass
@@ -205,6 +212,15 @@ class Store(Protocol):
     async def recent_messages(
         self, conversation_id: int, limit: int
     ) -> list[BotMessage]: ...
+    async def importar_historial_crm(
+        self,
+        conversation_id: int,
+        entradas: list[tuple[str, str, str, str]],
+        cursor: str,
+    ) -> None:
+        """Guarda (rol, contenido, clave, origen) del CRM y mueve el cursor, en
+        UNA escritura. Una clave (wamid) que la conversación ya tiene se salta."""
+        ...
 
     # medios ya enviados (send_media: cada recurso una vez por conversación)
     async def media_ya_enviada(self, conversation_id: int, url: str) -> bool: ...
@@ -410,6 +426,33 @@ class MemoryStore(MemoryDispatchStore):
     ) -> list[BotMessage]:
         msgs = [m for m in self.messages if m.conversation_id == conversation_id]
         return msgs[-limit:]
+
+    async def importar_historial_crm(
+        self,
+        conversation_id: int,
+        entradas: list[tuple[str, str, str, str]],
+        cursor: str,
+    ) -> None:
+        tiene = {
+            m.wa_message_id
+            for m in self.messages
+            if m.conversation_id == conversation_id and m.wa_message_id
+        }
+        for rol, contenido, clave, fuente in entradas:
+            if clave in tiene:
+                continue
+            tiene.add(clave)
+            self.messages.append(
+                BotMessage(
+                    id=next(self._ids),
+                    conversation_id=conversation_id,
+                    role=rol,
+                    content=contenido,
+                    wa_message_id=clave,
+                    source=fuente,
+                )
+            )
+        self.conversations[conversation_id].crm_sync_cursor = cursor
 
     async def media_ya_enviada(self, conversation_id: int, url: str) -> bool:
         return (conversation_id, url) in self.media_sent
