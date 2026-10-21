@@ -96,6 +96,12 @@ def test_validar_cuenta_preguntas():
     assert validar("¿Uno? ¿Dos?", ["¿Uno?"], 2) == "cambió el número de preguntas"
 
 
+def test_validar_no_deja_quitar_viñetas():
+    original = "Incluye:\n• Revisión\n• Técnica\n• Presupuesto"
+    assert validar(original, ["Incluye:", "Revisión\nTécnica\nPresupuesto"], 3) == "quitó viñetas"
+    assert validar(original, ["Incluye:", "• Revisión\n• Técnica\n• Presupuesto"], 3) is None
+
+
 @pytest.mark.parametrize(
     "texto,motivo",
     [

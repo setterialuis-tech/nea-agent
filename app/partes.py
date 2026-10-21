@@ -26,6 +26,7 @@ MINIMO_DE_PARTE = 60
 
 _URL = re.compile(r"(?:https?://|www\.)\S+", re.I)
 _FIN_DE_FRASE = re.compile(r"(?<=[.!?…])\s+(?=[¿¡A-ZÁÉÍÓÚÑ0-9\U0001F300-\U0001FAFF*_(\-•✅📍👉📌])")
+_VINETA = re.compile(r"^\s*(?:[-•]|\d+[.)])\s+", re.M)
 _ITEM_DE_LISTA = re.compile(r"^\s*(?:[-•*✅📍👉📌✔️▪️]|\d+[.)])\s+")
 
 
@@ -94,7 +95,7 @@ REGLAS
 - Máximo {maximo} partes y máximo 3 frases por parte. El contenido total debe estar completo en la suma de las partes.
 - Una pregunta es una unidad: nunca la partas entre dos mensajes. La pregunta de cierre va al final de la última parte.
 - Las URL van COMPLETAS y tal cual, dentro de la parte que las introduce. Nunca las cortes ni las quites.
-- Una lista: el texto introductorio en una parte y los ítems después, con \\n antes de cada ítem. No pongas más de 3 ítems en una misma parte.
+- Una lista: el texto introductorio en una parte y los ítems después, con \\n antes de cada ítem. No pongas más de 3 ítems en una misma parte. Cada ítem conserva su viñeta (• o -) o su número al inicio de la línea: nunca la quites.
 - Quita los asteriscos decorativos (*) y el signo ¡ de apertura. Mantén un asterisco a cada lado SOLO en la pregunta de cierre (*¿Te gustaría agendar?*).
 - Conserva los emojis que ya trae el texto. Si una parte tiene más de 150 caracteres y ningún emoji, agrega uno de este banco: 🩺 💊 🏥 ⚕️ 📋 📌 ✅. Máximo 2 emojis nuevos por parte.
 - Si el texto ya cabe bien en un solo mensaje, devuelve una sola parte."""
@@ -116,6 +117,8 @@ def validar(original: str, partes: list[str], maximo: int) -> str | None:
         return "perdió un enlace"
     if unido.count("?") != original.count("?"):
         return "cambió el número de preguntas"
+    if len(_VINETA.findall(unido)) < len(_VINETA.findall(original)):
+        return "quitó viñetas"
     largo, base = len(unido), max(len(original), 1)
     if not 0.7 <= largo / base <= 1.4:
         return "cambió demasiado el largo"
