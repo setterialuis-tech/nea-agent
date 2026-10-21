@@ -54,6 +54,11 @@ class BusinessProfile:
     coalesce_seconds: float | None = None
     parts_delay_seconds: float | None = None
     format_with_model: bool | None = None
+    # Ajustes → Seguimiento rápido de Nea en el CRM. None = lo que diga el
+    # entorno (FOLLOWUP_HOURS) y la instrucción de siempre; False = sin empujón.
+    followup_enabled: bool | None = None
+    followup_hours: float | None = None
+    followup_prompt: str | None = None
     # Ajustes → IA del CRM, un modelo por función (conversacion, formato, audio,
     # vision). Trae llaves: nunca se imprime (`repr=False`) ni se guarda en disco.
     # Vacío = cada función usa lo que diga el entorno de Nea.
@@ -106,7 +111,20 @@ def profile_from_payload(payload: dict[str, Any], default_name: str) -> Business
             return None
         return v if minimo <= v <= maximo else None
 
+    fu = payload.get("followup") if isinstance(payload.get("followup"), dict) else {}
+    try:
+        fu_horas: float | None = float(fu.get("hours"))
+    except (TypeError, ValueError):
+        fu_horas = None
+    if fu_horas is not None and not 0.25 <= fu_horas <= 23:
+        fu_horas = None
+    fu_prompt = fu.get("prompt")
+    fu_prompt = fu_prompt.strip() if isinstance(fu_prompt, str) else ""
+
     return BusinessProfile(
+        followup_enabled=fu.get("enabled") if isinstance(fu.get("enabled"), bool) else None,
+        followup_hours=fu_horas,
+        followup_prompt=fu_prompt or None,
         modelos=_modelos_de(payload.get("models")),
         max_parts_ads=_num("maxPartsAds", int, 1, 6),
         max_parts_organic=_num("maxPartsOrganic", int, 1, 6),

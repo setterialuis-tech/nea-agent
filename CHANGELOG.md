@@ -4,6 +4,11 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.9.1 — 2026-10-20
+
+- **Nunca más un «.» o un emoji suelto.** Todo texto que escribe el modelo se descarta si, quitando espacios, signos, números y emojis, no quedan letras reales (seguimiento: mínimo 3; respuesta del turno: mínimo 2, así «Sí» pasa). El motivo queda en el log. El 21-oct el empujón mandó un «.» y un emoji a pacientes.
+- **Seguimiento rápido configurable desde el CRM.** `GET /api/bot/profile` puede traer `followup` (`enabled`, `hours`, `prompt`). Apagado: Nea no programa ni envía empujones; el `prompt` reemplaza la instrucción fija; `hours` reemplaza `FOLLOWUP_HOURS`. Sin el dato (CRM anterior a 1.21.1) Nea se comporta como antes (`FOLLOWUP_HOURS` del entorno). Ventana de 24 h, IA pausada y handoff se respetan igual. Cambios en máx. 5 min (caché del perfil).
+
 ## 1.9.0 — 2026-10-20
 
 - **Memoria completa.** Al empezar cada turno (y antes de un seguimiento) Nea pide al CRM los mensajes posteriores al último que ya vio (`GET /api/bot/messages`, por cursor) y los incorpora a su historial: campañas, plantillas, seguimientos, recordatorios, el chat de un humano y lo que el paciente escribió con la IA apagada. Lo de origen CRM entra con una marca (`[Plantilla enviada]`, `[Mensaje del equipo]`) que Nea nunca repite al lead. Sin duplicados (filas y cursor se escriben juntos). Migración `010` (columnas nuevas, idempotente). Necesita CRM 1.21.x; con un CRM anterior se degrada sin error (404 → sigue como antes).

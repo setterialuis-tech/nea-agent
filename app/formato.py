@@ -20,6 +20,7 @@ Lo que NO se toca, a propósito:
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Callable
 
 # Marcadores de posición para lo protegido: caracteres de uso privado de
@@ -95,6 +96,15 @@ def a_whatsapp(texto: str) -> str:
 
     s = _LINEAS_EN_BLANCO.sub("\n\n", s).strip()
     return _MARCA.sub(lambda m: protegidos[int(m.group(1))], s)
+
+
+def cuenta_letras(texto: str | None) -> int:
+    """Letras reales del texto: sin espacios, signos, números ni emojis.
+
+    Sirve de última red antes de enviar algo que escribió el modelo: un «.» o
+    un «👍» suelto no es un mensaje (el 21-oct el seguimiento mandó ambos).
+    """
+    return sum(1 for c in texto or "" if unicodedata.category(c).startswith("L"))
 
 
 def _enlace(texto: str, destino: str, proteger: Callable[[str], str]) -> str:

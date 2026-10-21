@@ -135,3 +135,116 @@ async def test_followup_espera_el_turno_vivo_y_se_calla_si_el_lead_escribio(resp
 
     assert messages.call_count == 0  # ya hubo conversación: sin empujón
     await ctx.crm.aclose()
+
+
+# --- Mensajes sin letras reales (21-oct: salió un «.» y un emoji suelto) ------
+
+import pytest
+
+from app.formato import cuenta_letras
+from app.profile import BusinessProfile, profile_from_payload
+from app.turn import _respuesta_invalida
+
+
+@pytest.mark.parametrize("texto", [".", "👍", "", "   ", "¿?", "…", "12 😊"])
+async def test_followup_descarta_mensaje_sin_letras(respx_mock, caplog, texto):
+    ctx = make_ctx()
+    ctx.llm.replies = [LlmReply(content=texto)]
+    conv = await preparar_conversacion(ctx)
+    respx_mock.get(f"{CRM_URL}/api/bot/context").mock(
+        return_value=httpx.Response(200, json=crm_context())
+    )
+    messages = respx_mock.post(f"{CRM_URL}/api/bot/messages").mock(
+        return_value=httpx.Response(200, json={"messageId": "m1"})
+    )
+    with caplog.at_level("WARNING", logger="nea.followup"):
+        await FollowupWorker(ctx).tick()
+    assert messages.call_count == 0
+    assert "no escribió un mensaje" in caplog.text
+    assert ctx.store.conversations[conv.id].followup_sent is True
+    await ctx.crm.aclose()
+
+
+async def test_followup_texto_normal_se_envia(respx_mock):
+    ctx = make_ctx()
+    ctx.llm.replies = [LlmReply(content="Hola, ¿seguimos? 😊")]
+    await preparar_conversacion(ctx)
+    respx_mock.get(f"{CRM_URL}/api/bot/context").mock(
+        return_value=httpx.Response(200, json=crm_context())
+    )
+    messages = respx_mock.post(f"{CRM_URL}/api/bot/messages").mock(
+        return_value=httpx.Response(200, json={"messageId": "m1"})
+    )
+    await FollowupWorker(ctx).tick()
+    assert messages.call_count == 1
+    await ctx.crm.aclose()
+
+
+def test_cuenta_letras():
+    assert cuenta_letras("Sí") == 2
+    assert cuenta_letras("👍 .") == 0
+    assert cuenta_letras(None) == 0
+
+
+def test_turno_descarta_respuesta_sin_palabras():
+    for basura in (".", "👍", "…"):
+        assert _respuesta_invalida(basura, []) is not None
+    assert _respuesta_invalida("Sí 👍", []) is None
+    assert _respuesta_invalida("", []) is None
+
+
+# --- Seguimiento rápido configurado desde el CRM ------------------------------
+
+def test_perfil_lee_followup_del_crm():
+    p = profile_from_payload(
+        {"followup": {"enabled": True, "hours": 6, "prompt": "  Sé breve.  "}}, "Nea"
+    )
+    assert (p.followup_enabled, p.followup_hours, p.followup_prompt) == (True, 6.0, "Sé breve.")
+
+
+def test_perfil_sin_followup_es_como_antes():
+    p = profile_from_payload({}, "Nea")
+    assert (p.followup_enabled, p.followup_hours, p.followup_prompt) == (None, None, None)
+    p = profile_from_payload({"followup": {"enabled": "si", "hours": 999, "prompt": 5}}, "Nea")
+    assert (p.followup_enabled, p.followup_hours, p.followup_prompt) == (None, None, None)
+
+
+class _Perfil:
+    def __init__(self, perfil):
+        self._p = perfil
+
+    async def get(self):
+        return self._p
+
+
+async def test_followup_apagado_en_el_crm_no_envia(respx_mock):
+    ctx = make_ctx()
+    ctx.profile = _Perfil(BusinessProfile(followup_enabled=False))
+    conv = await preparar_conversacion(ctx)
+    respx_mock.get(f"{CRM_URL}/api/bot/context").mock(
+        return_value=httpx.Response(200, json=crm_context())
+    )
+    messages = respx_mock.post(f"{CRM_URL}/api/bot/messages").mock(
+        return_value=httpx.Response(200, json={"messageId": "m1"})
+    )
+    await FollowupWorker(ctx).tick()
+    assert messages.call_count == 0
+    assert ctx.store.conversations[conv.id].followup_sent is True
+    await ctx.crm.aclose()
+
+
+async def test_followup_usa_el_prompt_del_crm(respx_mock):
+    ctx = make_ctx()
+    ctx.profile = _Perfil(BusinessProfile(followup_enabled=True, followup_prompt="CRITERIO-DEL-DUENO"))
+    ctx.llm.replies = [LlmReply(content="Hola, ¿seguimos?")]
+    await preparar_conversacion(ctx)
+    respx_mock.get(f"{CRM_URL}/api/bot/context").mock(
+        return_value=httpx.Response(200, json=crm_context())
+    )
+    respx_mock.post(f"{CRM_URL}/api/bot/messages").mock(
+        return_value=httpx.Response(200, json={"messageId": "m1"})
+    )
+    await FollowupWorker(ctx).tick()
+    vistos = " ".join(str(m["content"]) for m in ctx.llm.calls[-1]["messages"])
+    assert "CRITERIO-DEL-DUENO" in vistos
+    await ctx.crm.aclose()

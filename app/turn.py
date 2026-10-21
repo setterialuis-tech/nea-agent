@@ -20,7 +20,7 @@ from app import media, roles
 from app.agenda import agenda_vigente
 from app.config import canonical_identity
 from app.crm import CrmConflict, CrmError, CrmUnreachable
-from app.formato import a_whatsapp
+from app.formato import a_whatsapp, cuenta_letras
 from app.partes import dar_forma_con_modelo, partir
 from app.hostility import ALERT as HOSTILITY_ALERT, hostile_streak
 from app.llm import LlmExhausted
@@ -740,9 +740,16 @@ async def run_turn(
     else:
         if runtime.proposed:
             updates["phase"] = "agendando"
-        if sent and not conv.followup_sent and not settings.cloud_mode:
+        if (
+            sent
+            and not conv.followup_sent
+            and not settings.cloud_mode
+            and profile.followup_enabled is not False
+        ):
             updates["followup_due_at"] = utcnow() + timedelta(
-                hours=settings.followup_hours
+                hours=profile.followup_hours
+                if profile.followup_hours is not None
+                else settings.followup_hours
             )
     await ctx.store.update_conversation(conv.id, **updates)
     if cerrar_sin_rumbo:
@@ -948,6 +955,9 @@ def _respuesta_invalida(texto: str | None, previos: list[str]) -> str | None:
     """
     if not texto or not texto.strip():
         return None
+    # Un «.» o un «👍» solos no son una respuesta («Sí» y «Ok» sí: 2 letras).
+    if cuenta_letras(texto) < 2:
+        return "no traía palabras (solo signos o emojis)"
     # Se compara lo que el lead VERÍA: ya convertido a WhatsApp. Así un enlace
     # de Markdown suelto («[Agenda](https://…)») no pasa por nota entre
     # corchetes, y una repetición no se escapa por traer otras negritas que

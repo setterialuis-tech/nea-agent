@@ -15,7 +15,7 @@ from typing import Any
 
 from app import roles
 from app.crm import CrmConflict, CrmError
-from app.formato import a_whatsapp
+from app.formato import a_whatsapp, cuenta_letras
 from app.llm import LlmExhausted
 from app.profile import resolve_profile
 from app.prompt import FOLLOWUP_INSTRUCTION, build_system_prompt
@@ -26,6 +26,9 @@ from app.turn import conversation_lock
 from app.turn import _agent_tz
 
 logger = logging.getLogger("nea.followup")
+
+# Letras reales mínimas para que el empujón valga como mensaje.
+MIN_LETRAS = 3
 
 
 class FollowupWorker:
@@ -125,6 +128,13 @@ class FollowupWorker:
             )
             return
 
+        # Interruptor de Ajustes → Seguimiento rápido en el CRM. Sin dato (CRM
+        # viejo) manda el entorno, como siempre.
+        perfil = await resolve_profile(ctx)
+        if perfil.followup_enabled is False:
+            logger.info("followup %s: apagado en el CRM — omitido", conv.wa_identity)
+            return
+
         # El empujón se piensa a cuenta de SU miembro, igual que el turno: por
         # el CRM, con la credencial de esta organización. Si el CRM no ofrece
         # pensar, no se piensa — usar la llave del entorno le cobraría al
@@ -148,7 +158,7 @@ class FollowupWorker:
             )
 
         system = build_system_prompt(
-            profile=await resolve_profile(ctx),
+            profile=perfil,
             context=context,
             conv=conv,
             offered=[],
@@ -162,7 +172,7 @@ class FollowupWorker:
         messages: list[dict[str, Any]] = (
             [{"role": "system", "content": system}]
             + [{"role": m.role, "content": m.content} for m in history]
-            + [{"role": "system", "content": FOLLOWUP_INSTRUCTION}]
+            + [{"role": "system", "content": perfil.followup_prompt or FOLLOWUP_INSTRUCTION}]
         )
         try:
             llm = await roles.llm_de(ctx, "conversacion")
@@ -173,8 +183,13 @@ class FollowupWorker:
         # Igual que el turno: WhatsApp no pinta Markdown (app/formato.py), y
         # el historial guarda lo que el lead de verdad recibió.
         text = a_whatsapp(quitar_marcas((reply.content or "").strip()))
-        if not text:
-            logger.warning("followup %s: LLM sin texto — omitido", conv.wa_identity)
+        if cuenta_letras(text) < MIN_LETRAS:
+            logger.warning(
+                "followup %s: el modelo no escribió un mensaje (%r, %d letras) — omitido",
+                conv.wa_identity,
+                text[:20],
+                cuenta_letras(text),
+            )
             return
         try:
             await ctx.crm.send_message(str(crm_conv_id), text)
