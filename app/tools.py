@@ -279,6 +279,47 @@ QUALIFY_SCHEMA: dict[str, Any] = {
 }
 
 
+TIPOS_AVISO = ("PRESENCIAL", "RECLAMO", "AVANZADO")
+
+TRANSMITIR_AVISO_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "Transmitir_aviso",
+        "description": (
+            "Ejecuta esta herramienta para: 1) Transferir la ficha médica del paciente a la "
+            "coordinación cuando confirme que desea avanzar con su valoración (sea PRESENCIAL "
+            "o VIRTUAL en el Paso A5-B). 2) Escalar quejas, urgencias médicas o pacientes ya "
+            "operados/en tratamiento. Se ejecuta en silencio y SIEMPRE junto con tu mensaje de "
+            "respuesta al paciente en el mismo turno."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reclamo": {
+                    "type": "string",
+                    "description": (
+                        "La ficha o el motivo del aviso, tal como lo pide tu prompt (sin saludos). "
+                        "Máx. 2000 caracteres. No inventes datos."
+                    ),
+                },
+                "tipo": {
+                    "type": "string",
+                    "enum": list(TIPOS_AVISO),
+                    "description": (
+                        "Escribe exactamente uno de estos tres valores según el caso: "
+                        "'PRESENCIAL': para transferir a cualquier paciente que confirmó que desea "
+                        "agendar su valoración (sea Presencial o Virtual en el Paso A5-B). "
+                        "'RECLAMO': para quejas de atención, inconformidades o urgencias médicas. "
+                        "'AVANZADO': para pacientes ya operados o en tratamiento activo con el Dr. Roger."
+                    ),
+                },
+            },
+            "required": ["reclamo", "tipo"],
+        },
+    },
+}
+
+
 QUOTE_SCHEMA: dict[str, Any] = {
     "type": "function",
     "function": {
@@ -323,11 +364,15 @@ QUOTE_SCHEMA: dict[str, Any] = {
 QUOTE_MAX_ITEMS = 30
 
 
-def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False, media: bool = False, qualify: bool = False, quotes: bool = False) -> list[dict[str, Any]]:
+def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False, media: bool = False, qualify: bool = False, quotes: bool = False, transmitir_aviso: bool = False) -> list[dict[str, Any]]:
     base = _tool_schemas(agenda_enabled, agenda_v2, coordination)
     if media:
         base = base + [MEDIA_SCHEMA]
-    if qualify:
+    # Transmitir_aviso sustituye a qualify_lead: las dos llaman al mismo endpoint del CRM
+    # y ofrecer ambas confundiría al modelo sobre cuál usar.
+    if transmitir_aviso:
+        base = base + [TRANSMITIR_AVISO_SCHEMA]
+    elif qualify:
         base = base + [QUALIFY_SCHEMA]
     if quotes:
         base = base + [QUOTE_SCHEMA]
@@ -528,6 +573,8 @@ class ToolRuntime:
                 return await self._update_ficha(args)
             if name == "qualify_lead":
                 return await self._qualify_lead(args)
+            if name == "Transmitir_aviso":
+                return await self._transmitir_aviso(args)
             if name == "create_quote":
                 return await self._create_quote(args)
             if name == "propose_slots":
@@ -566,6 +613,28 @@ class ToolRuntime:
             return {"ok": True, "nota": "los avisos están desactivados en el CRM; continúa con el flujo (handoff)"}
         enviados = [n for n in (data.get("notified") or []) if n.get("status") == "enviado"]
         return {"ok": True, "nota": "lead calificado y asesor avisado", "avisos_enviados": len(enviados)}
+
+    async def _transmitir_aviso(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Aviso a la coordinación con su `tipo`: el CRM lo manda por su webhook (n8n)."""
+        if not (self._ctx.settings.transmitir_aviso_enabled and hasattr(self._ctx.crm, "qualify")):
+            return {"ok": False, "error": "no_disponible", "detalle": "no puedes transmitir avisos por herramienta; sigue el flujo y haz handoff"}
+        reclamo = str(args.get("reclamo") or args.get("summary") or "").strip()[:2000]
+        if not reclamo:
+            return {"ok": False, "error": "argumentos_invalidos", "detalle": "reclamo es obligatorio"}
+        tipo = str(args.get("tipo") or "").strip().upper()
+        if tipo not in TIPOS_AVISO:
+            return {
+                "ok": False,
+                "error": "argumentos_invalidos",
+                "detalle": "tipo debe ser exactamente PRESENCIAL, RECLAMO o AVANZADO; vuelve a llamar con el que corresponde",
+            }
+        try:
+            data = await self._ctx.crm.qualify(self._crm_conv_id, reclamo, tipo)
+        except CrmError:
+            return {"ok": False, "error": "crm_error", "detalle": "no pude transmitir el aviso; continúa con tu respuesta y haz handoff"}
+        if data.get("skipped"):
+            return {"ok": True, "nota": "los avisos están desactivados en el CRM; continúa con el flujo (handoff)"}
+        return {"ok": True, "nota": "aviso transmitido en silencio; responde al paciente según tu prompt, sin mencionarlo"}
 
     async def _create_quote(self, args: dict[str, Any]) -> dict[str, Any]:
         if not (self._ctx.settings.quotes_enabled and hasattr(self._ctx.crm, "create_quote")):

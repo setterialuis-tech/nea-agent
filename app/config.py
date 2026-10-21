@@ -234,6 +234,12 @@ class Settings(BaseSettings):
     # lo mueve de etapa, guarda el resumen y avisa al asesor). Solo contra el CRM
     # clínico/inmobiliario con AVISOS=on; contra el oficial, déjala en false.
     qualify_enabled: bool = False
+    # Herramienta `Transmitir_aviso(reclamo, tipo)`: la misma vía que qualify_lead (POST
+    # /api/bot/qualify) pero con el nombre y los parámetros que ya usa el prompt del
+    # negocio, y con `tipo` (PRESENCIAL | RECLAMO | AVANZADO) para que el CRM avise por
+    # su webhook a n8n. Sustituye a qualify_lead (no se ofrecen las dos). No hace falta
+    # QUALIFY_ENABLED. Solo contra el CRM clínico con AVISOS=on.
+    transmitir_aviso_enabled: bool = False
     # Herramienta create_quote: pedir al CRM una cotización en PDF (el CRM
     # calcula con SU tabla de precios, arma el PDF con la marca y lo envía por
     # WhatsApp). Solo contra el CRM con COTIZACIONES=on; si no, déjala en false.

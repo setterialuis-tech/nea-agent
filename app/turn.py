@@ -934,7 +934,7 @@ _OTRO_ALFABETO = re.compile(
 _TOKEN_INTERNO = re.compile(r"<[｜|][^>\n]{0,40}[｜|]>")
 _HERRAMIENTA_EN_TEXTO = re.compile(
     r"\b(?:update_ficha|propose_slots|book_session|reschedule_session|route_out|"
-    r"send_media|qualify_lead|create_quote)\b|```\s*json|\"function\"\s*:|"
+    r"send_media|qualify_lead|Transmitir_aviso|create_quote)\b|```\s*json|\"function\"\s*:|"
     r"\b(?:ejecutar[eé]|accionando|llamar[eé])\b[^.\n]{0,40}\bherramienta\b",
     re.I,
 )
@@ -1005,7 +1005,7 @@ async def _tool_loop(
     llm = await roles.llm_de(ctx, "conversacion")
     for _ in range(MAX_TOOL_ROUNDS):
         reply = await llm.complete(
-            messages, tools=tool_schemas(ctx.agenda_enabled, bool(getattr(ctx.crm, "supports_agenda_v2", False)), bool(getattr(ctx.crm, "supports_coordination", False)), media=bool(ctx.settings.send_media_enabled and getattr(ctx.crm, "supports_media", False)), qualify=bool(ctx.settings.qualify_enabled and hasattr(ctx.crm, "qualify")), quotes=bool(ctx.settings.quotes_enabled and hasattr(ctx.crm, "create_quote")))
+            messages, tools=tool_schemas(ctx.agenda_enabled, bool(getattr(ctx.crm, "supports_agenda_v2", False)), bool(getattr(ctx.crm, "supports_coordination", False)), media=bool(ctx.settings.send_media_enabled and getattr(ctx.crm, "supports_media", False)), qualify=bool(ctx.settings.qualify_enabled and hasattr(ctx.crm, "qualify")), transmitir_aviso=bool(ctx.settings.transmitir_aviso_enabled and hasattr(ctx.crm, "qualify")), quotes=bool(ctx.settings.quotes_enabled and hasattr(ctx.crm, "create_quote")))
         )
         if not reply.tool_calls:
             return reply.content  # turno de puro texto

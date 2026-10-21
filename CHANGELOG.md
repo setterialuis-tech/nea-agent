@@ -4,6 +4,15 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.10.0 — 2026-10-21
+
+- **Herramienta `Transmitir_aviso(reclamo, tipo)`.** Es la misma vía de `qualify_lead` (POST `/api/bot/qualify` del CRM) con el nombre y los parámetros que ya usa el prompt del negocio, y con `tipo` = `PRESENCIAL` | `RECLAMO` | `AVANZADO` para que el CRM avise por su webhook a n8n. Un `tipo` inventado se rechaza (el modelo reintenta) y nunca se avisa con él. Se enciende con `TRANSMITIR_AVISO_ENABLED=true` y **sustituye** a `qualify_lead` (no se ofrecen las dos). Requiere un CRM con el webhook de avisos (1.23.2+) y `AVISOS=on`; contra uno anterior el aviso se registra pero no sale por webhook.
+- Sin cambios si no pones la variable.
+
+### Actualizar desde 1.9.2
+
+Pon `TRANSMITIR_AVISO_ENABLED=true` en la app de Nea y **redespliega** (una variable nueva solo se inyecta en un deploy).
+
 ## 1.9.1 — 2026-10-20
 
 - **Nunca más un «.» o un emoji suelto.** Todo texto que escribe el modelo se descarta si, quitando espacios, signos, números y emojis, no quedan letras reales (seguimiento: mínimo 3; respuesta del turno: mínimo 2, así «Sí» pasa). El motivo queda en el log. El 21-oct el empujón mandó un «.» y un emoji a pacientes.
