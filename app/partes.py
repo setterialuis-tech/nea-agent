@@ -6,7 +6,7 @@ Dos caminos, y el segundo es opcional:
    corta una frase, una pregunta ni una URL, y respeta el máximo de mensajes.
    Siempre corre.
 2. `dar_forma_con_modelo`: un modelo propio (`FORMAT_MODEL`) reparte el texto
-   como lo hacía el formateador de n8n. Su salida se VALIDA contra el original
+   con el prompt del CRM (el «GPT formateador» de n8n). Su salida se VALIDA contra el original
    (enlaces, preguntas, largo); si algo no cuadra, se usa el camino 1. Un
    formateador que falla jamás pierde ni cambia lo que Nea quiso decir.
 """
@@ -16,6 +16,9 @@ import json
 import logging
 import re
 from typing import Any
+
+from app.formato_prompt import PROMPT_FORMATO_FABRICA
+from app.multimedia import leer_salida_formato
 
 logger = logging.getLogger("nea.partes")
 
@@ -88,17 +91,21 @@ def partir(texto: str, maximo: int) -> list[str]:
 # Formateador con modelo (opcional)
 # ---------------------------------------------------------------------------
 
-PROMPT_FORMATO = """Eres un formateador de mensajes de WhatsApp. Recibes el texto que un agente quiere enviar y lo repartes en hasta {maximo} mensajes cortos. NO reescribes, NO resumes, NO agregas información y NO quitas ninguna pregunta.
+# Partes máximas que admite el formato de n8n (part_1 … part_4).
+MAX_PARTES_FORMATO = 4
 
-REGLAS
-- Devuelves SOLO un JSON: {{"partes": ["...", "..."]}}. Sin texto fuera del JSON.
-- Máximo {maximo} partes y máximo 3 frases por parte. El contenido total debe estar completo en la suma de las partes.
-- Una pregunta es una unidad: nunca la partas entre dos mensajes. La pregunta de cierre va al final de la última parte.
-- Las URL van COMPLETAS y tal cual, dentro de la parte que las introduce. Nunca las cortes ni las quites.
-- Una lista: el texto introductorio en una parte y los ítems después, con \\n antes de cada ítem. No pongas más de 3 ítems en una misma parte. Cada ítem conserva su viñeta (• o -) o su número al inicio de la línea: nunca la quites.
-- Quita los asteriscos decorativos (*) y el signo ¡ de apertura. Mantén un asterisco a cada lado SOLO en la pregunta de cierre (*¿Te gustaría agendar?*).
-- Conserva los emojis que ya trae el texto. Si una parte tiene más de 150 caracteres y ningún emoji, agrega uno de este banco: 🩺 💊 🏥 ⚕️ 📋 📌 ✅. Máximo 2 emojis nuevos por parte.
-- Si el texto ya cabe bien en un solo mensaje, devuelve una sola parte."""
+
+def prompt_de_sistema(prompt: str, maximo: int) -> str:
+    """El prompt del formateador + el máximo de partes de esta respuesta (Agente → Mensajes).
+
+    Espejo de `promptDeSistema` en `src/lib/formatear.ts` del CRM.
+    """
+    n = max(1, min(MAX_PARTES_FORMATO, int(maximo) if maximo else MAX_PARTES_FORMATO))
+    return (
+        f"{prompt.strip()}\n\n# LÍMITE DE ESTA RESPUESTA\n"
+        f"Usa como máximo {n} parte(s) (part_1 a part_{n}); deja vacías las demás "
+        "y reparte TODO el contenido en las que uses."
+    )
 
 
 def _urls(texto: str) -> set[str]:
@@ -125,14 +132,22 @@ def validar(original: str, partes: list[str], maximo: int) -> str | None:
     return None
 
 
-async def dar_forma_con_modelo(llm: Any, texto: str, maximo: int) -> list[str] | None:
-    """Reparte el texto con el modelo formateador. None = usa `partir`."""
+async def dar_forma_con_modelo(
+    llm: Any, texto: str, maximo: int, prompt: str | None = None
+) -> list[str] | None:
+    """Reparte el texto con el modelo formateador. None = usa `partir`.
+
+    `prompt` es el que el dueño editó en el CRM (Ajustes → IA → Formatear la
+    respuesta); sin él, el de fábrica (el «GPT formateador» de n8n). Solo recibe la
+    respuesta del agente: ni el historial ni nada del paciente.
+    """
     if maximo <= 1 or len(texto) < MINIMO_PARA_PARTIR:
         return None
+    maximo = min(maximo, MAX_PARTES_FORMATO)
     try:
         reply = await llm.complete(
             [
-                {"role": "system", "content": PROMPT_FORMATO.format(maximo=maximo)},
+                {"role": "system", "content": prompt_de_sistema(prompt or PROMPT_FORMATO_FABRICA, maximo)},
                 {"role": "user", "content": texto},
             ]
         )
@@ -142,13 +157,13 @@ async def dar_forma_con_modelo(llm: Any, texto: str, maximo: int) -> list[str] |
     crudo = (reply.content or "").strip()
     crudo = re.sub(r"^```(?:json)?\s*|\s*```$", "", crudo)
     try:
-        partes = json.loads(crudo).get("partes")
-    except (ValueError, AttributeError):
+        partes = leer_salida_formato(json.loads(crudo))
+    except ValueError:
         logger.warning("formateador: respuesta que no es JSON — reglas de código")
         return None
-    if not isinstance(partes, list):
+    if not partes:
+        logger.warning("formateador: sin partes que se puedan leer — reglas de código")
         return None
-    partes = [p.strip() if isinstance(p, str) else "" for p in partes]
     motivo = validar(texto, partes, maximo)
     if motivo:
         logger.warning("formateador: %s — reglas de código", motivo)

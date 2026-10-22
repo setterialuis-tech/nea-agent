@@ -21,6 +21,7 @@ from app.agenda import agenda_vigente
 from app.config import canonical_identity
 from app.crm import CrmConflict, CrmError, CrmUnreachable
 from app.formato import a_whatsapp, cuenta_letras
+from app.multimedia import Archivo, Item, Texto, extraer_secuencia
 from app.partes import dar_forma_con_modelo, partir
 from app.hostility import ALERT as HOSTILITY_ALERT, hostile_streak
 from app.llm import LlmExhausted
@@ -708,15 +709,18 @@ async def run_turn(
             quitar_marcas(runtime.finalize_reply(final_text.strip()))
         )
     if final_text and final_text.strip():
-        partes = await _repartir(ctx, profile, final_text, de_anuncio=bool(referral))
-        sent = await _enviar_partes(
-            ctx, conv.id, str(crm_conv_id), partes,
+        # El agente escribe UNA respuesta completa (texto + URL de imágenes/videos,
+        # como en n8n); el código saca los archivos y el formateador reparte el
+        # texto. Todo sale en el orden en que el agente lo escribió.
+        secuencia = await _repartir_secuencia(ctx, profile, final_text, de_anuncio=bool(referral))
+        sent = await _enviar_secuencia(
+            ctx, conv.id, str(crm_conv_id), secuencia,
             profile.parts_delay_seconds
             if profile.parts_delay_seconds is not None
             else settings.parts_delay_seconds,
         )
         if sent:
-            await ctx.store.add_message(conv.id, "assistant", "\n\n".join(partes))
+            await ctx.store.add_message(conv.id, "assistant", _para_historial(secuencia))
             # Los archivos van SIEMPRE después de la frase que los introduce.
             await _enviar_medios(ctx, conv.id, str(crm_conv_id), runtime.media_queue)
 
@@ -1064,8 +1068,82 @@ async def _repartir(
     partes: list[str] | None = None
     format_llm = roles.llm_de_perfil(ctx, profile, "formato")
     if format_llm is not None and profile.format_with_model is not False:
-        partes = await dar_forma_con_modelo(format_llm, texto, maximo)
+        partes = await dar_forma_con_modelo(format_llm, texto, maximo, profile.format_prompt)
     return partes or partir(texto, maximo) or [texto]
+
+
+async def _repartir_secuencia(
+    ctx: AppContext, profile: Any, texto: str, *, de_anuncio: bool
+) -> list[Item]:
+    """La respuesta del agente como una lista en orden: mensajes de texto y archivos.
+
+    Los archivos (URL de imagen, video o PDF) los saca el código; el formateador
+    solo ve el texto que queda, bloque por bloque.
+    """
+    salida: list[Item] = []
+    for item in extraer_secuencia(texto):
+        if isinstance(item, Archivo):
+            salida.append(item)
+            continue
+        for parte in await _repartir(ctx, profile, item.texto, de_anuncio=de_anuncio):
+            salida.append(Texto(parte))
+    return salida
+
+
+def _para_historial(secuencia: list[Item]) -> str:
+    """Lo que Nea recuerda haber dicho: el texto y, donde iba, el archivo (así no lo repite)."""
+    bloques: list[str] = []
+    for item in secuencia:
+        if isinstance(item, Texto):
+            bloques.append(item.texto)
+        else:
+            icono = {"image": "📸", "video": "🎥"}.get(item.tipo, "📄")
+            bloques.append((f"{item.caption}\n" if item.caption else "") + f"{icono} {item.url}")
+    return "\n\n".join(bloques)
+
+
+async def _enviar_secuencia(
+    ctx: AppContext, conv_id: int, crm_conv_id: str, items: list[Item], pausa: float
+) -> bool:
+    """Envía en orden textos y archivos, con una pausa entre uno y otro. True si salió algo.
+
+    Un archivo ya enviado en esta conversación no se repite. Si el CRM no puede
+    mandarlo (dominio no permitido, sin soporte), el paciente lo recibe como enlace:
+    nunca se pierde la URL.
+    """
+    salio = False
+    primero = True
+    for item in items:
+        if isinstance(item, Archivo) and await ctx.store.media_ya_enviada(conv_id, item.url):
+            continue
+        if not primero:
+            await asyncio.sleep(pausa)
+        primero = False
+        if isinstance(item, Texto):
+            if not await _send(ctx, conv_id, crm_conv_id, item.texto):
+                break
+            salio = True
+            continue
+        como_enlace = f"{item.caption}\n{item.url}" if item.caption else item.url
+        if not getattr(ctx.crm, "supports_media", False):
+            if not await _send(ctx, conv_id, crm_conv_id, como_enlace):
+                break
+            salio = True
+            continue
+        try:
+            await ctx.crm.send_media(crm_conv_id, item.url, item.tipo, item.caption)
+        except CrmConflict as exc:
+            logger.info("archivo bloqueado por el CRM (%s) — silencio", exc.code)
+            break
+        except CrmError as exc:
+            logger.warning("archivo no enviado (%s): %s — va como enlace", item.url, exc)
+            if not await _send(ctx, conv_id, crm_conv_id, como_enlace):
+                break
+            salio = True
+            continue
+        await ctx.store.marcar_media_enviada(conv_id, item.url)
+        salio = True
+    return salio
 
 
 async def _enviar_partes(
@@ -1126,6 +1204,8 @@ async def _enviar_medios(
     recurso no se marca como enviado, así que puede pedirse de nuevo.
     """
     for item in cola:
+        if await ctx.store.media_ya_enviada(conv_id, item["url"]):
+            continue  # ya salió en el texto de este turno
         caption = a_whatsapp(item["caption"]) if item["caption"] else None
         try:
             await ctx.crm.send_media(crm_conv_id, item["url"], item["type"], caption)

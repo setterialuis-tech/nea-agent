@@ -54,6 +54,9 @@ class BusinessProfile:
     coalesce_seconds: float | None = None
     parts_delay_seconds: float | None = None
     format_with_model: bool | None = None
+    # Ajustes → IA → Formatear la respuesta: el prompt del formateador (el «GPT formateador»
+    # de n8n). None = el de fábrica.
+    format_prompt: str | None = None
     # Ajustes → Seguimiento rápido de Nea en el CRM. None = lo que diga el
     # entorno (FOLLOWUP_HOURS) y la instrucción de siempre; False = sin empujón.
     followup_enabled: bool | None = None
@@ -131,6 +134,7 @@ def profile_from_payload(payload: dict[str, Any], default_name: str) -> Business
         coalesce_seconds=_num("coalesceSeconds", float, 0, 60),
         parts_delay_seconds=_num("partsDelaySeconds", float, 0, 10),
         format_with_model=msg.get("formatWithModel") if isinstance(msg.get("formatWithModel"), bool) else None,
+        format_prompt=(payload.get("formatPrompt").strip() or None) if isinstance(payload.get("formatPrompt"), str) else None,
         cloud=prof.get("cloud") is True,
         config_version=int(prof.get("configVersion") or 1),
         agent_name=str(prof.get("name") or default_name),

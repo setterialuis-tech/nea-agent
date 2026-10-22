@@ -137,3 +137,10 @@ def test_prompt_minimo_advierte_falta_de_conocimiento():
 @pytest.mark.parametrize("kb", [None, "  "])
 def test_has_knowledge_falso_con_kb_vacio(kb):
     assert not BusinessProfile(kb_text=kb).has_knowledge
+
+
+def test_el_prompt_del_formateador_viaja_en_el_perfil_y_vacio_es_de_fabrica():
+    assert profile_from_payload({"profile": {}, "formatPrompt": "  Mi prompt  "}, "Nea").format_prompt == "Mi prompt"
+    assert profile_from_payload({"profile": {}, "formatPrompt": "   "}, "Nea").format_prompt is None
+    assert profile_from_payload({"profile": {}}, "Nea").format_prompt is None  # CRM anterior: el de fábrica
+    assert profile_from_payload({"profile": {}, "formatPrompt": 42}, "Nea").format_prompt is None

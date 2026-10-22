@@ -4,6 +4,18 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.11.0 — 2026-10-22
+
+- **El formateador vuelve a ser el de n8n.** El agente conversacional escribe UNA respuesta completa, con la URL de cada imagen, video o PDF dentro del texto (📸 / 🎥), y deja de depender de la herramienta `send_media`. Nea saca esos archivos **con código** (por extensión: `.jpg .jpeg .png .webp`, `.mp4 .mov .3gp`, `.pdf`; páginas, YouTube, mapas y WhatsApp se quedan como texto), reparte el texto con el formateador y envía todo **en el orden en que el agente lo escribió**: texto → archivo → texto. Módulo nuevo `app/multimedia.py` (espejo de `src/lib/formatear.ts` del CRM; comparten casos de prueba).
+- **Pie de foto dinámico.** «Caption: …» en la línea siguiente al archivo es su pie; sin él, la frase que lo presenta (termina en «:» o «👇», p. ej. «Mira cómo se arma 👇») pasa a ser su pie, en vez de quedar un mensaje suelto.
+- **Una vez por conversación, sin perder la URL.** Un archivo ya enviado no se repite (también si el modelo además llama `send_media`). Si el CRM no puede mandarlo (dominio no permitido, sin soporte), el paciente lo recibe como enlace.
+- **Prompt del formateador editable desde el CRM** (Ajustes → IA → «Formatear la respuesta», CRM 1.25.0): `GET /api/bot/profile` trae `formatPrompt`; sin él, el de fábrica (basado en el «GPT formateador» de n8n). El formateador solo recibe la respuesta del agente (no el historial). Entiende el formato de n8n (`{"response": {"part_1"…"part_4"}}`) y el simple (`{"partes": [...]}`); máximo 4 partes. Su salida se valida igual que antes (enlaces, preguntas, viñetas, largo) y, si falla, se usan las reglas de código.
+- La memoria guarda la respuesta con sus archivos (`📸 URL`), no solo el texto.
+
+### Actualizar desde 1.10.1
+
+Sin variables nuevas. Con un CRM anterior a 1.25.0 sigue funcionando con el prompt de fábrica. Para dejar de ofrecerle `send_media` al modelo pon `SEND_MEDIA_ENABLED=false` y quita del Prompt único las instrucciones de esa herramienta.
+
 ## 1.10.0 — 2026-10-21
 
 - **Herramienta `Transmitir_aviso(reclamo, tipo)`.** Es la misma vía de `qualify_lead` (POST `/api/bot/qualify` del CRM) con el nombre y los parámetros que ya usa el prompt del negocio, y con `tipo` = `PRESENCIAL` | `RECLAMO` | `AVANZADO` para que el CRM avise por su webhook a n8n. Un `tipo` inventado se rechaza (el modelo reintenta) y nunca se avisa con él. Se enciende con `TRANSMITIR_AVISO_ENABLED=true` y **sustituye** a `qualify_lead` (no se ofrecen las dos). Requiere un CRM con el webhook de avisos (1.23.2+) y `AVISOS=on`; contra uno anterior el aviso se registra pero no sale por webhook.

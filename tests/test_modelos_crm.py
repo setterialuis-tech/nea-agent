@@ -217,9 +217,11 @@ async def test_el_formateador_usa_el_modelo_del_crm(monkeypatch: pytest.MonkeyPa
     from app import turn
 
     recibido: list[Any] = []
+    prompts: list[str | None] = []
 
-    async def dar_forma(llm: Any, texto: str, maximo: int) -> list[str]:
+    async def dar_forma(llm: Any, texto: str, maximo: int, prompt: str | None = None) -> list[str]:
         recibido.append(llm)
+        prompts.append(prompt)
         return ["uno", "dos"]
 
     del_crm = FakeLLM()
@@ -227,9 +229,10 @@ async def test_el_formateador_usa_el_modelo_del_crm(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(turn, "dar_forma_con_modelo", dar_forma)
 
     ctx = make_ctx()  # sin FORMAT_MODEL en el entorno
-    perfil = BusinessProfile(modelos={"formato": OPENROUTER})
+    perfil = BusinessProfile(modelos={"formato": OPENROUTER}, format_prompt="PROMPT DEL CRM")
     assert await turn._repartir(ctx, perfil, "texto largo " * 30, de_anuncio=True) == ["uno", "dos"]
     assert recibido == [del_crm]
+    assert prompts == ["PROMPT DEL CRM"]  # el prompt que el dueño editó en el CRM llega al formateador
 
 
 async def test_el_formateador_respeta_el_interruptor_del_crm(monkeypatch: pytest.MonkeyPatch):
