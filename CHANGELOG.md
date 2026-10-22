@@ -4,6 +4,10 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.11.2 — 2026-10-22
+
+- **El formateador limpia también lo que va en un solo mensaje.** Con el tope por respuesta completa (1.11.1) un bloque de texto puede tocarle un solo mensaje, y entonces no se consultaba al modelo: quedaban el «¡», los asteriscos y la falta de emojis. Ahora se consulta a partir de 120 caracteres aunque el bloque sea de una sola parte (una llamada barata al modelo del formateador, sin costo de WhatsApp; el de n8n también limpiaba siempre).
+
 ## 1.11.1 — 2026-10-22
 
 - **El tope de mensajes cuenta la respuesta completa, archivos incluidos.** Antes «Mensajes por respuesta» (Agente → Mensajes) se aplicaba a cada bloque de texto por separado: con una imagen en medio, un tope de 3 daba 5 mensajes (3 de texto + la imagen + el texto del enlace). Ahora cada imagen, video o PDF cuenta como un mensaje. Si no alcanza un mensaje por bloque, el texto que sigue a un archivo pasa a su **pie de foto** (los enlaces siguen siendo clicables), del último al primero y mientras quepa en 1024 caracteres; lo que sobra del presupuesto se reparte entre los bloques, más a los largos. Nunca se pierde texto: si no cabe, se pasa del tope antes que cortar. Caso del exterior: anuncio (3) = texto + imagen + texto; orgánico (2) = texto + imagen con el enlace en su pie. Cada mensaje de la API cuenta para el costo del cliente.

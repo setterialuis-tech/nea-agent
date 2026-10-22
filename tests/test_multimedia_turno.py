@@ -144,3 +144,15 @@ async def test_el_formateador_acepta_cuatro_partes_si_el_maximo_lo_permite():
 def test_prompt_de_sistema_acota_el_maximo():
     assert "part_1 a part_2" in prompt_de_sistema("X", 2)
     assert "part_1 a part_4" in prompt_de_sistema("X", 9)
+
+
+async def test_el_formateador_limpia_tambien_un_bloque_de_un_solo_mensaje():
+    texto = "¡Gracias, Rodrigo! Con lo que me cuentas, el Dr. Roger puede revisar tu caso y explicarte qué opciones aplican para ti. ¿Te gustaría avanzar?"
+    limpio = "Gracias, Rodrigo! 🩺 Con lo que me cuentas, el Dr. Roger puede revisar tu caso y explicarte qué opciones aplican para ti. ¿Te gustaría avanzar?"
+    llm = _LlmFalso(json.dumps({"response": {"part_1": limpio, "part_2": "", "part_3": "", "part_4": ""}}))
+    assert await dar_forma_con_modelo(llm, texto, 1) == [limpio]
+    assert "máximo 1 parte(s)" in llm.mensajes[0]["content"]
+    # Un texto corto no vale una llamada.
+    llm2 = _LlmFalso("{}")
+    assert await dar_forma_con_modelo(llm2, "¡Hola Rodrigo!", 1) is None
+    assert llm2.mensajes == []

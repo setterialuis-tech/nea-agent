@@ -24,6 +24,9 @@ logger = logging.getLogger("nea.partes")
 
 # Un texto corto no se parte: tres burbujas de seis palabras cansan.
 MINIMO_PARA_PARTIR = 200
+# El formateador con modelo limpia también lo que va en un solo mensaje (quita «¡» y asteriscos,
+# pone emojis), como el de n8n; un texto más corto que esto no vale una llamada.
+MINIMO_PARA_FORMATEAR = 120
 # Una parte más corta que esto se pega a su vecina.
 MINIMO_DE_PARTE = 60
 
@@ -141,9 +144,9 @@ async def dar_forma_con_modelo(
     respuesta); sin él, el de fábrica (el «GPT formateador» de n8n). Solo recibe la
     respuesta del agente: ni el historial ni nada del paciente.
     """
-    if maximo <= 1 or len(texto) < MINIMO_PARA_PARTIR:
+    if len(texto) < MINIMO_PARA_FORMATEAR:
         return None
-    maximo = min(maximo, MAX_PARTES_FORMATO)
+    maximo = max(1, min(maximo, MAX_PARTES_FORMATO))
     try:
         reply = await llm.complete(
             [
