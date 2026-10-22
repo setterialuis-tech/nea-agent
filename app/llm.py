@@ -75,6 +75,24 @@ def _formato_de_audio(mime: str) -> str:
     return _FORMATOS.get((mime or "").split(";")[0].strip().lower(), "ogg")
 
 
+# Vertex (compatibilidad OpenAI) NO entiende "ogg": exige el tipo MIME completo en
+# `input_audio.format` ("audio/ogg"). Con "ogg" responde 400 «mimeType ... ogg, which is
+# not supported» y Nea le decía al paciente que no podía abrir su nota de voz.
+_MIME_VERTEX = {
+    "ogg": "audio/ogg",
+    "mp3": "audio/mpeg",
+    "m4a": "audio/mp4",
+    "wav": "audio/wav",
+    "webm": "audio/webm",
+    "flac": "audio/flac",
+    "aac": "audio/aac",
+}
+
+
+def _formato_vertex(mime: str) -> str:
+    return _MIME_VERTEX.get(_formato_de_audio(mime), "audio/ogg")
+
+
 # Segundos por intento, el default de LLM_TIMEOUT_SECONDS (ver config.py).
 DEFAULT_TIMEOUT = 45.0
 
@@ -194,7 +212,11 @@ class OpenAiLlm:
         vez de transcribirlo, y Nea acabaría respondiendo a su propia
         paráfrasis.
         """
-        fmt = _formato_de_audio(mime)
+        fmt = (
+            _formato_vertex(mime)
+            if self._token_source is not None
+            else _formato_de_audio(mime)
+        )
         b64 = base64.b64encode(data).decode()
         last_error: Exception | None = None
 
