@@ -149,3 +149,54 @@ def leer_salida_formato(data: Any) -> list[str] | None:
     r = data.get("response") if isinstance(data.get("response"), dict) else data
     partes = [p for p in (_txt(r.get(f"part_{i}")) for i in range(1, 7)) if p]
     return partes or None
+
+
+# ---------------------------------------------------------------------------
+# Tope de mensajes por respuesta
+# ---------------------------------------------------------------------------
+
+def ajustar_a_tope(items: list[Item], maximo: int) -> tuple[list[Item], list[int]]:
+    """Que la respuesta COMPLETA no pase de `maximo` mensajes, contando cada archivo como uno.
+
+    Devuelve los items (a veces con texto plegado al pie de un archivo) y, por cada
+    item, cuántas partes puede ocupar: 0 para un archivo, 1 o más para un bloque de texto.
+
+    1. Si no alcanza para un mensaje por bloque de texto, el texto que sigue a un
+       archivo pasa a su pie de foto (los enlaces funcionan igual en un pie), del último
+       al primero, mientras el pie quepa en 1024 caracteres.
+    2. Lo que sobra del presupuesto se reparte entre los bloques, más a los más largos.
+    3. Si aun así no cabe (más archivos que el tope), cada bloque conserva un mensaje.
+
+    Espejo de `ajustarATope` en `src/lib/formatear.ts` del CRM.
+    """
+    items = list(items)
+    maximo = max(1, int(maximo))
+    archivos = sum(1 for i in items if isinstance(i, Archivo))
+
+    def bloques() -> list[int]:
+        return [k for k, i in enumerate(items) if isinstance(i, Texto)]
+
+    while maximo - archivos < len(bloques()):
+        plegado = False
+        for k in reversed(bloques()):
+            previo = items[k - 1] if k > 0 else None
+            if not isinstance(previo, Archivo):
+                continue
+            pie = (previo.caption + "\n\n" if previo.caption else "") + items[k].texto  # type: ignore[union-attr]
+            if len(pie) > CAPTION_MAX:
+                continue
+            items[k - 1] = Archivo(previo.url, previo.tipo, pie)
+            del items[k]
+            plegado = True
+            break
+        if not plegado:
+            break
+
+    idx = bloques()
+    presupuesto = max(len(idx), maximo - archivos)
+    cuotas = {k: 1 for k in idx}
+    for _ in range(presupuesto - len(idx)):
+        # El siguiente mensaje va al bloque que quedaría con partes más largas.
+        k = max(idx, key=lambda j: len(items[j].texto) / cuotas[j])  # type: ignore[union-attr]
+        cuotas[k] += 1
+    return items, [cuotas.get(k, 0) for k in range(len(items))]

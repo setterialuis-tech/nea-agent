@@ -21,7 +21,7 @@ from app.agenda import agenda_vigente
 from app.config import canonical_identity
 from app.crm import CrmConflict, CrmError, CrmUnreachable
 from app.formato import a_whatsapp, cuenta_letras
-from app.multimedia import Archivo, Item, Texto, extraer_secuencia
+from app.multimedia import Archivo, Item, Texto, ajustar_a_tope, extraer_secuencia
 from app.partes import dar_forma_con_modelo, partir
 from app.hostility import ALERT as HOSTILITY_ALERT, hostile_streak
 from app.llm import LlmExhausted
@@ -1047,8 +1047,16 @@ async def _tool_loop(
 SEND_ATTEMPTS = 4  # backoff 1 s, 2 s, 4 s entre intentos (~7 s en el turno)
 
 
+def _maximo_de_mensajes(ctx: AppContext, profile: Any, de_anuncio: bool) -> int:
+    """Mensajes por respuesta: Agente → Mensajes del CRM (anuncio u orgánico) o el entorno."""
+    s = ctx.settings
+    if de_anuncio:
+        return profile.max_parts_ads if profile.max_parts_ads is not None else s.max_parts_ads
+    return profile.max_parts_organic if profile.max_parts_organic is not None else s.max_parts_organic
+
+
 async def _repartir(
-    ctx: AppContext, profile: Any, texto: str, *, de_anuncio: bool
+    ctx: AppContext, profile: Any, texto: str, *, de_anuncio: bool, maximo: int | None = None
 ) -> list[str]:
     """El texto en hasta N mensajes. N: Agente → Mensajes del CRM, o el entorno.
 
@@ -1056,15 +1064,8 @@ async def _repartir(
     formateador (FORMAT_MODEL) se usa primero; si su salida no valida, reglas
     de código. Nunca devuelve una lista vacía.
     """
-    s = ctx.settings
-    if de_anuncio:
-        maximo = profile.max_parts_ads if profile.max_parts_ads is not None else s.max_parts_ads
-    else:
-        maximo = (
-            profile.max_parts_organic
-            if profile.max_parts_organic is not None
-            else s.max_parts_organic
-        )
+    if maximo is None:
+        maximo = _maximo_de_mensajes(ctx, profile, de_anuncio)
     partes: list[str] | None = None
     format_llm = roles.llm_de_perfil(ctx, profile, "formato")
     if format_llm is not None and profile.format_with_model is not False:
@@ -1078,14 +1079,20 @@ async def _repartir_secuencia(
     """La respuesta del agente como una lista en orden: mensajes de texto y archivos.
 
     Los archivos (URL de imagen, video o PDF) los saca el código; el formateador
-    solo ve el texto que queda, bloque por bloque.
+    solo ve el texto que queda, bloque por bloque. El tope de mensajes (Agente →
+    Mensajes) cuenta la respuesta COMPLETA, archivos incluidos: cada mensaje de
+    WhatsApp suma, y con un archivo en medio el tope por bloque daba 5 donde el
+    dueño había puesto 3.
     """
+    maximo = _maximo_de_mensajes(ctx, profile, de_anuncio)
+    items, cuotas = ajustar_a_tope(extraer_secuencia(texto), maximo)
     salida: list[Item] = []
-    for item in extraer_secuencia(texto):
+    for item, cuota in zip(items, cuotas):
         if isinstance(item, Archivo):
             salida.append(item)
             continue
-        for parte in await _repartir(ctx, profile, item.texto, de_anuncio=de_anuncio):
+        partes = await _repartir(ctx, profile, item.texto, de_anuncio=de_anuncio, maximo=cuota)
+        for parte in partes[:cuota] if len(partes) > cuota >= 1 else partes:
             salida.append(Texto(parte))
     return salida
 

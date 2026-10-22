@@ -85,3 +85,33 @@ def test_leer_salida_formato_n8n_y_simple():
     assert leer_salida_formato(None) is None
     assert leer_salida_formato({"response": {"part_1": ""}}) is None
     assert leer_salida_formato("texto") is None
+
+
+def test_tope_cuenta_los_archivos_y_pliega_el_texto_que_sigue_al_pie():
+    from app.multimedia import ajustar_a_tope
+
+    t = Texto("a" * 300)
+    f = Archivo(IMG, "image", "Mira cómo se arma 👇")
+    sig = Texto("Aquí el enlace ¿Quieres avanzar?")
+    # Tope 3: texto + imagen + texto (1 + 1 + 1), nada se pliega.
+    items, cuotas = ajustar_a_tope([t, f, sig], 3)
+    assert items == [t, f, sig] and cuotas == [1, 0, 1]
+    # Tope 2: no cabe un mensaje por bloque → el texto de después pasa al pie de la imagen.
+    items, cuotas = ajustar_a_tope([t, f, sig], 2)
+    assert items == [t, Archivo(IMG, "image", "Mira cómo se arma 👇\n\nAquí el enlace ¿Quieres avanzar?")]
+    assert cuotas == [1, 0]
+    # Tope 5: lo que sobra se reparte, más al bloque largo.
+    items, cuotas = ajustar_a_tope([t, f, sig], 5)
+    assert cuotas == [3, 0, 1]
+    # Sin archivos el tope es el de siempre.
+    assert ajustar_a_tope([t], 3) == ([t], [3])
+
+
+def test_tope_no_pliega_si_el_pie_no_cabe_y_nunca_deja_un_bloque_sin_mensaje():
+    from app.multimedia import ajustar_a_tope
+
+    t = Texto("a" * 100)
+    f = Archivo(IMG, "image", None)
+    largo = Texto("b" * 1100)  # no cabe en 1024
+    items, cuotas = ajustar_a_tope([t, f, largo], 2)
+    assert items == [t, f, largo] and cuotas == [1, 0, 1]  # se pasa del tope antes que perder texto

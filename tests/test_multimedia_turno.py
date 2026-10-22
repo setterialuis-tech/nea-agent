@@ -27,7 +27,8 @@ def _cuerpos(routes):
     return [json.loads(c.request.content) for c in routes["messages"].calls]
 
 
-async def test_la_imagen_sale_en_su_lugar_con_su_pie_y_el_enlace_queda_en_el_texto(ctx, client, respx_mock):
+async def test_organico_dos_mensajes_en_total_el_enlace_va_en_el_pie_de_la_imagen(ctx, client, respx_mock):
+    # Tope orgánico por defecto = 2 contando la imagen: texto + imagen (con el enlace en su pie).
     ctx.settings.parts_delay_seconds = 0
     routes = mock_crm_basics(respx_mock)
     ctx.llm.replies = [LlmReply(content=RESPUESTA)]
@@ -35,16 +36,28 @@ async def test_la_imagen_sale_en_su_lugar_con_su_pie_y_el_enlace_queda_en_el_tex
     await asyncio.sleep(0.4)
 
     cuerpos = _cuerpos(routes)
-    tipos = ["media" if "media" in c else "text" for c in cuerpos]
-    assert tipos.count("media") == 1
-    i = tipos.index("media")
-    assert i > 0 and i < len(cuerpos) - 1  # texto antes y texto después
-    assert cuerpos[i]["media"] == {"url": IMG, "type": "image", "caption": "Mira cómo se arma 👇"}
-    # La URL del archivo no se quedó en ningún texto; el enlace de la página sí.
-    textos = [c["text"] for c in cuerpos if "text" in c]
-    assert not any(IMG in t for t in textos)
-    assert PAGINA in cuerpos[-1]["text"] and "¿Te gustaría avanzar con tu teleconsulta?" in cuerpos[-1]["text"]
-    assert not any("Mira cómo se arma" in t for t in textos)
+    assert len(cuerpos) == 2
+    assert "text" in cuerpos[0] and "media" in cuerpos[1]
+    assert IMG not in cuerpos[0]["text"] and "Mira cómo se arma" not in cuerpos[0]["text"]
+    media = cuerpos[1]["media"]
+    assert media["url"] == IMG and media["type"] == "image"
+    assert media["caption"].startswith("Mira cómo se arma 👇")
+    assert PAGINA in media["caption"] and "¿Te gustaría avanzar con tu teleconsulta?" in media["caption"]
+
+
+async def test_anuncio_tres_mensajes_en_total_con_la_imagen_en_su_lugar(ctx, client, respx_mock):
+    # Tope de anuncio por defecto = 3 contando la imagen: texto, imagen con su pie, texto con el enlace.
+    ctx.settings.parts_delay_seconds = 0
+    routes = mock_crm_basics(respx_mock)
+    ctx.llm.replies = [LlmReply(content=RESPUESTA)]
+    await client.post("/webhook", content=wa_body(text="quiero información", referral_headline="Cirugía"))
+    await asyncio.sleep(0.4)
+
+    cuerpos = _cuerpos(routes)
+    assert [("media" if "media" in c else "text") for c in cuerpos] == ["text", "media", "text"]
+    assert cuerpos[1]["media"] == {"url": IMG, "type": "image", "caption": "Mira cómo se arma 👇"}
+    assert not any(IMG in c.get("text", "") for c in cuerpos)
+    assert PAGINA in cuerpos[2]["text"] and "¿Te gustaría avanzar con tu teleconsulta?" in cuerpos[2]["text"]
 
 
 async def test_el_mismo_archivo_no_se_repite_en_la_conversacion(ctx, client, respx_mock):
