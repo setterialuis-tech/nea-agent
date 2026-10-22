@@ -4,6 +4,10 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.11.3 — 2026-10-22
+
+- **Si el CRM no tiene el teléfono del lead, el agente lo pide.** WhatsApp no manda el número de quien usa nombre de usuario (contacto `bsuid:`); el CRM lo entrega como `contact.phone: null`. Ahora el contexto del agente trae «TELÉFONO FALTANTE» (solo en WhatsApp y solo si el CRM manda el campo) para que pida el número una vez antes de pasar al lead al equipo, y `Transmitir_aviso` acepta `telefono` opcional que se reenvía a `POST /api/bot/qualify` (el CRM 1.25.3 lo usa solo si el contacto no tiene teléfono). Sin el campo, todo queda como antes. Al actualizar: redesplegar; el texto que hace que el agente lo pida va en el prompt del negocio.
+
 ## 1.11.2 — 2026-10-22
 
 - **El formateador limpia también lo que va en un solo mensaje.** Con el tope por respuesta completa (1.11.1) un bloque de texto puede tocarle un solo mensaje, y entonces no se consultaba al modelo: quedaban el «¡», los asteriscos y la falta de emojis. Ahora se consulta a partir de 120 caracteres aunque el bloque sea de una sola parte (una llamada barata al modelo del formateador, sin costo de WhatsApp; el de n8n también limpiaba siempre).

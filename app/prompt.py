@@ -351,6 +351,21 @@ def build_system_prompt(
         lines.append(f"- Nombre del lead: {contact['name']}.")
     if lead.get("stageName"):
         lines.append(f"- Etapa en el pipeline: {lead['stageName']}.")
+    # `"phone" in contact` distingue «el CRM no tiene su teléfono» de «el CRM no
+    # mandó el dato» (CRM viejo o contexto vacío): solo en el primer caso se pide.
+    if (
+        "phone" in contact
+        and not contact.get("phone")
+        and (contact.get("channel") or "whatsapp") == "whatsapp"
+    ):
+        lines.append(
+            "- TELÉFONO FALTANTE: el CRM NO tiene el número de este lead (WhatsApp no lo "
+            "compartió) y el equipo no podrá escribirle por fuera del CRM. ANTES de "
+            "pasarlo al equipo (aviso, transferencia o handoff por haber aceptado avanzar), "
+            "pídele UNA vez, en una frase corta, su número de WhatsApp con código de país. "
+            "Cuando te lo dé, inclúyelo en el aviso (parámetro telefono) y en la nota. Si "
+            "dice que no quiere darlo o no lo da tras pedirlo, no insistas: avisa igual."
+        )
     ficha = contact.get("ficha") or {}
     filled = {k: v for k, v in ficha.items() if v not in (None, "", [])}
     if filled:

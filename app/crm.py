@@ -309,7 +309,13 @@ class CrmClient:
         data: dict[str, Any] = resp.json()
         return data
 
-    async def qualify(self, conversation_id: str, summary: str, tipo: str | None = None) -> dict[str, Any]:
+    async def qualify(
+        self,
+        conversation_id: str,
+        summary: str,
+        tipo: str | None = None,
+        telefono: str | None = None,
+    ) -> dict[str, Any]:
         """Avisa que el lead está calificado (POST /api/bot/qualify).
 
         El CRM mueve la etapa, guarda el resumen en la ficha y avisa al asesor
@@ -318,6 +324,9 @@ class CrmClient:
         payload: dict[str, Any] = {"conversationId": conversation_id, "summary": summary}
         if tipo:
             payload["tipo"] = tipo
+        if telefono:
+            # El que el paciente escribió en el chat, cuando el CRM no tiene su teléfono.
+            payload["telefono"] = telefono
         resp = await self._request("POST", "/api/bot/qualify", json=payload)
         if resp.status_code == 404:
             raise CrmError("qualify no disponible en este CRM")

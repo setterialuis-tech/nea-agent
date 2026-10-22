@@ -313,6 +313,14 @@ TRANSMITIR_AVISO_SCHEMA: dict[str, Any] = {
                         "'AVANZADO': para pacientes ya operados o en tratamiento activo con el Dr. Roger."
                     ),
                 },
+                "telefono": {
+                    "type": "string",
+                    "description": (
+                        "SOLO si el CONTEXTO ACTUAL dice que no tienes el teléfono del paciente y él te lo "
+                        "escribió en el chat: su número de WhatsApp con código de país, tal como lo dio. "
+                        "Si el CRM ya tiene su teléfono, no lo mandes. No inventes ni completes números."
+                    ),
+                },
             },
             "required": ["reclamo", "tipo"],
         },
@@ -629,7 +637,8 @@ class ToolRuntime:
                 "detalle": "tipo debe ser exactamente PRESENCIAL, RECLAMO o AVANZADO; vuelve a llamar con el que corresponde",
             }
         try:
-            data = await self._ctx.crm.qualify(self._crm_conv_id, reclamo, tipo)
+            telefono = str(args.get("telefono") or "").strip()[:40] or None
+            data = await self._ctx.crm.qualify(self._crm_conv_id, reclamo, tipo, telefono)
         except CrmError:
             return {"ok": False, "error": "crm_error", "detalle": "no pude transmitir el aviso; continúa con tu respuesta y haz handoff"}
         if data.get("skipped"):
