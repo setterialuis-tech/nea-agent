@@ -12,10 +12,11 @@ comportamiento end-to-end (ver README, "Definición de Hecho").
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-import json
+from app.pais import pais_del_numero
 from app.profile import BusinessProfile
 from app.state import Conversation, OfferedSlot
 
@@ -292,6 +293,35 @@ def _linea_cerrada(cerrada: dict) -> str:
     return f"- Su cita del {label} ya no está vigente."
 
 
+def _linea_pais(contact: dict, conv: Conversation) -> list[str]:
+    """De qué país es el número del lead (por su prefijo), como pista para el modelo.
+
+    El teléfono sale del CRM (`contact.phone`) o, si no vino, de la identidad de la
+    conversación cuando es un número (las de `bsuid:`/`ig:` no lo son). Solo WhatsApp.
+    """
+    if (contact.get("channel") or "whatsapp") != "whatsapp":
+        return []
+    telefono = contact.get("phone") or (
+        conv.wa_identity if re.fullmatch(r"\+?\d{7,15}", conv.wa_identity or "") else None
+    )
+    if not telefono:
+        if "phone" in contact:  # el CRM lo mandó vacío: WhatsApp no compartió el número
+            return [
+                "- PAÍS DEL NÚMERO: desconocido (WhatsApp no compartió su teléfono). No "
+                "supongas de qué país escribe: si al negocio le importa, pregúntaselo."
+            ]
+        return []
+    digitos = re.sub(r"\D", "", telefono)
+    pais = pais_del_numero(digitos)
+    if not pais:
+        return [f"- PAÍS DEL NÚMERO: no se pudo determinar (teléfono +{digitos})."]
+    return [
+        f"- PAÍS DEL NÚMERO: su teléfono (+{digitos}) es de {pais}. Es una pista, no un "
+        "hecho: puede vivir en otro país. Úsala para decidir si debes confirmarle desde qué "
+        "país escribe; NO supongas que escribe desde el país del negocio ni inventes su ciudad."
+    ]
+
+
 def build_system_prompt(
     *,
     profile: BusinessProfile,
@@ -351,6 +381,7 @@ def build_system_prompt(
         lines.append(f"- Nombre del lead: {contact['name']}.")
     if lead.get("stageName"):
         lines.append(f"- Etapa en el pipeline: {lead['stageName']}.")
+    lines.extend(_linea_pais(contact, conv))
     # `"phone" in contact` distingue «el CRM no tiene su teléfono» de «el CRM no
     # mandó el dato» (CRM viejo o contexto vacío): solo en el primer caso se pide.
     if (
