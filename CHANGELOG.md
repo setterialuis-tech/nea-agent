@@ -4,6 +4,10 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.11.4 — 2026-10-23
+
+- **El agente sabe de qué país es el número de quien le escribe.** Antes el modelo no veía el teléfono del lead y trataba como local a quien escribía desde otro país (en producción, pacientes dominicanos atendidos como colombianos). Ahora el contexto trae «PAÍS DEL NÚMERO: su teléfono (+…) es de X» —calculado con el prefijo, con la librería `phonenumbers==9.0.41` (dependencia nueva)—, o «desconocido» si WhatsApp no compartió el número. Es una pista, no un dato seguro, y no asume cuál es el país del negocio: qué hacer con ella lo dice el prompt del negocio. Al actualizar: redesplegar (la imagen instala la dependencia).
+
 ## 1.11.3 — 2026-10-22
 
 - **Si el CRM no tiene el teléfono del lead, el agente lo pide.** WhatsApp no manda el número de quien usa nombre de usuario (contacto `bsuid:`); el CRM lo entrega como `contact.phone: null`. Ahora el contexto del agente trae «TELÉFONO FALTANTE» (solo en WhatsApp y solo si el CRM manda el campo) para que pida el número una vez antes de pasar al lead al equipo, y `Transmitir_aviso` acepta `telefono` opcional que se reenvía a `POST /api/bot/qualify` (el CRM 1.25.3 lo usa solo si el contacto no tiene teléfono). Sin el campo, todo queda como antes. Al actualizar: redesplegar; el texto que hace que el agente lo pida va en el prompt del negocio.
