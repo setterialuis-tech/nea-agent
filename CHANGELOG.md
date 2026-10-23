@@ -4,6 +4,14 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.12.1 — 2026-10-23
+
+- **Une dos líneas que se publicaron en paralelo.** `v1.11.4` (el país del número, desde la rama `release/1.11.4`, ya desplegada en Roger) no traía el modo ahorro, y `v1.12.0` (modo ahorro, 1.11.1–1.11.3 y el origen de anuncio en todos los turnos) no traía el país del número. Esta versión trae todo: 1.11.4 + 1.12.0. Sin cambios de código respecto a la punta de la rama. Desplegar `1.12.0` o `1.11.4` por separado hace perder lo del otro.
+
+### Actualizar desde 1.11.4
+
+Con el CRM en 1.26.0 o más. Sin variables nuevas; el modo ahorro queda apagado hasta que se encienda en Agente → Mensajes.
+
 ## 1.11.4 — 2026-10-23
 
 - **El agente sabe de qué país es el número de quien le escribe.** Antes el modelo no veía el teléfono del lead y trataba como local a quien escribía desde otro país (en producción, pacientes dominicanos atendidos como colombianos). Ahora el contexto trae «PAÍS DEL NÚMERO: su teléfono (+…) es de X» —calculado con el prefijo, con la librería `phonenumbers==9.0.41` (dependencia nueva)—, o «desconocido» si WhatsApp no compartió el número. Es una pista, no un dato seguro, y no asume cuál es el país del negocio: qué hacer con ella lo dice el prompt del negocio. Al actualizar: redesplegar (la imagen instala la dependencia).
