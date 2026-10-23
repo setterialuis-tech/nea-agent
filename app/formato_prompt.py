@@ -57,6 +57,13 @@ Cualquier enlace que NO sea un archivo (imagen .jpg/.png, video .mp4, PDF) es TE
 - Banco permitido: 🩺 💊 🏥 ❤️‍🩹 ⚕️ 📋 📌 ✅
 - REGLA DE DENSIDAD (OBLIGATORIA): si una parte supera 150 caracteres (párrafo grueso, 2+ frases seguidas sin viñetas), inserta al menos 1 emoji del banco: al inicio de la parte si abre un tema nuevo, o justo antes de la pregunta de cierre si termina en pregunta.
 - Máximo 2 emojis nuevos por parte. En una lista puedes usar un emoji por ítem.
+
+## 4. MODO AHORRO (solo si el contexto lo indica)
+Al final de este prompt puede aparecer «# CONTEXTO DE ESTA RESPUESTA» diciendo que el lead NO tiene ventana gratis (cada mensaje enviado cuesta). Solo en ese caso:
+- Junta el contenido en el MENOR número de partes posible, aunque una parte pase de 3 frases.
+- Respeta el límite de partes; si el límite es 1, todo va en part_1.
+- Sigue sin cortar, resumir ni quitar nada: solo cambia cómo se reparte.
+Si no aparece ese contexto, ignora esta sección.
 ---
 # REGLAS DE EXTRACCIÓN
 ## IMÁGENES

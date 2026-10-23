@@ -219,7 +219,9 @@ async def test_el_formateador_usa_el_modelo_del_crm(monkeypatch: pytest.MonkeyPa
     recibido: list[Any] = []
     prompts: list[str | None] = []
 
-    async def dar_forma(llm: Any, texto: str, maximo: int, prompt: str | None = None) -> list[str]:
+    async def dar_forma(
+        llm: Any, texto: str, maximo: int, prompt: str | None = None, contexto: str | None = None
+    ) -> list[str]:
         recibido.append(llm)
         prompts.append(prompt)
         return ["uno", "dos"]

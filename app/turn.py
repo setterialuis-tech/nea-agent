@@ -22,7 +22,7 @@ from app.config import canonical_identity
 from app.crm import CrmConflict, CrmError, CrmUnreachable
 from app.formato import a_whatsapp, cuenta_letras
 from app.multimedia import Archivo, Item, Texto, ajustar_a_tope, extraer_secuencia
-from app.partes import dar_forma_con_modelo, partir
+from app.partes import CONTEXTO_SIN_VENTANA, dar_forma_con_modelo, partir
 from app.hostility import ALERT as HOSTILITY_ALERT, hostile_streak
 from app.llm import LlmExhausted
 from app.stall import (
@@ -712,7 +712,10 @@ async def run_turn(
         # El agente escribe UNA respuesta completa (texto + URL de imágenes/videos,
         # como en n8n); el código saca los archivos y el formateador reparte el
         # texto. Todo sale en el orden en que el agente lo escribió.
-        secuencia = await _repartir_secuencia(ctx, profile, final_text, de_anuncio=bool(referral))
+        de_anuncio, sin_ventana = _tipo_de_lead(profile, conversation_info, referral)
+        secuencia = await _repartir_secuencia(
+            ctx, profile, final_text, de_anuncio=de_anuncio, sin_ventana=sin_ventana
+        )
         sent = await _enviar_secuencia(
             ctx, conv.id, str(crm_conv_id), secuencia,
             profile.parts_delay_seconds
@@ -1047,8 +1050,31 @@ async def _tool_loop(
 SEND_ATTEMPTS = 4  # backoff 1 s, 2 s, 4 s entre intentos (~7 s en el turno)
 
 
-def _maximo_de_mensajes(ctx: AppContext, profile: Any, de_anuncio: bool) -> int:
-    """Mensajes por respuesta: Agente → Mensajes del CRM (anuncio u orgánico) o el entorno."""
+def _tipo_de_lead(profile: Any, conversation_info: dict[str, Any], referral: str | None) -> tuple[bool, bool]:
+    """(¿vino de un anuncio?, ¿modo ahorro y SIN ventana gratis?).
+
+    El origen sale del CRM (`conversation.origin`, el de la ficha: vale en TODOS los turnos);
+    antes solo se veía en el primer mensaje, el que trae el `referral`. Un CRM anterior no manda
+    `origin`: se usa el `referral`. `freeWindow` = anuncio dentro de las primeras 72 h.
+    """
+    origen = conversation_info.get("origin")
+    de_anuncio = (origen == "anuncio") if "origin" in conversation_info else bool(referral)
+    gratis = conversation_info.get("freeWindow")
+    if not isinstance(gratis, bool):
+        gratis = bool(referral)  # CRM anterior: el primer mensaje de un anuncio
+    sin_ventana = bool(getattr(profile, 'saver_mode', None)) and not gratis
+    return de_anuncio, sin_ventana
+
+
+def _maximo_de_mensajes(
+    ctx: AppContext, profile: Any, de_anuncio: bool, sin_ventana: bool = False
+) -> int:
+    """Mensajes por respuesta: Agente → Mensajes del CRM (anuncio u orgánico) o el entorno.
+
+    Con el modo ahorro, quien no tiene ventana gratis usa su propio tope (por defecto 1).
+    """
+    if sin_ventana:
+        return profile.saver_max_parts if profile.saver_max_parts is not None else 1
     s = ctx.settings
     if de_anuncio:
         return profile.max_parts_ads if profile.max_parts_ads is not None else s.max_parts_ads
@@ -1056,7 +1082,13 @@ def _maximo_de_mensajes(ctx: AppContext, profile: Any, de_anuncio: bool) -> int:
 
 
 async def _repartir(
-    ctx: AppContext, profile: Any, texto: str, *, de_anuncio: bool, maximo: int | None = None
+    ctx: AppContext,
+    profile: Any,
+    texto: str,
+    *,
+    de_anuncio: bool,
+    maximo: int | None = None,
+    sin_ventana: bool = False,
 ) -> list[str]:
     """El texto en hasta N mensajes. N: Agente → Mensajes del CRM, o el entorno.
 
@@ -1065,16 +1097,19 @@ async def _repartir(
     de código. Nunca devuelve una lista vacía.
     """
     if maximo is None:
-        maximo = _maximo_de_mensajes(ctx, profile, de_anuncio)
+        maximo = _maximo_de_mensajes(ctx, profile, de_anuncio, sin_ventana)
     partes: list[str] | None = None
     format_llm = roles.llm_de_perfil(ctx, profile, "formato")
     if format_llm is not None and profile.format_with_model is not False:
-        partes = await dar_forma_con_modelo(format_llm, texto, maximo, profile.format_prompt)
+        partes = await dar_forma_con_modelo(
+            format_llm, texto, maximo, profile.format_prompt,
+            CONTEXTO_SIN_VENTANA if sin_ventana else None,
+        )
     return partes or partir(texto, maximo) or [texto]
 
 
 async def _repartir_secuencia(
-    ctx: AppContext, profile: Any, texto: str, *, de_anuncio: bool
+    ctx: AppContext, profile: Any, texto: str, *, de_anuncio: bool, sin_ventana: bool = False
 ) -> list[Item]:
     """La respuesta del agente como una lista en orden: mensajes de texto y archivos.
 
@@ -1084,14 +1119,16 @@ async def _repartir_secuencia(
     WhatsApp suma, y con un archivo en medio el tope por bloque daba 5 donde el
     dueño había puesto 3.
     """
-    maximo = _maximo_de_mensajes(ctx, profile, de_anuncio)
+    maximo = _maximo_de_mensajes(ctx, profile, de_anuncio, sin_ventana)
     items, cuotas = ajustar_a_tope(extraer_secuencia(texto), maximo)
     salida: list[Item] = []
     for item, cuota in zip(items, cuotas):
         if isinstance(item, Archivo):
             salida.append(item)
             continue
-        partes = await _repartir(ctx, profile, item.texto, de_anuncio=de_anuncio, maximo=cuota)
+        partes = await _repartir(
+            ctx, profile, item.texto, de_anuncio=de_anuncio, maximo=cuota, sin_ventana=sin_ventana
+        )
         for parte in partes[:cuota] if len(partes) > cuota >= 1 else partes:
             salida.append(Texto(parte))
     return salida

@@ -98,17 +98,28 @@ def partir(texto: str, maximo: int) -> list[str]:
 MAX_PARTES_FORMATO = 4
 
 
-def prompt_de_sistema(prompt: str, maximo: int) -> str:
+# El aviso que recibe el formateador cuando el lead no tiene ventana gratis (modo ahorro).
+# Espejo de `CONTEXTO_SIN_VENTANA` en `src/lib/formatear.ts` del CRM.
+CONTEXTO_SIN_VENTANA = (
+    "Este lead NO tiene ventana gratis (modo ahorro): cada mensaje enviado cuesta. "
+    "Aplica la sección MODO AHORRO."
+)
+
+
+def prompt_de_sistema(prompt: str, maximo: int, contexto: str | None = None) -> str:
     """El prompt del formateador + el máximo de partes de esta respuesta (Agente → Mensajes).
 
     Espejo de `promptDeSistema` en `src/lib/formatear.ts` del CRM.
     """
     n = max(1, min(MAX_PARTES_FORMATO, int(maximo) if maximo else MAX_PARTES_FORMATO))
-    return (
+    base = (
         f"{prompt.strip()}\n\n# LÍMITE DE ESTA RESPUESTA\n"
         f"Usa como máximo {n} parte(s) (part_1 a part_{n}); deja vacías las demás "
         "y reparte TODO el contenido en las que uses."
     )
+    if contexto and contexto.strip():
+        return f"{base}\n\n# CONTEXTO DE ESTA RESPUESTA\n{contexto.strip()}"
+    return base
 
 
 def _urls(texto: str) -> set[str]:
@@ -136,7 +147,7 @@ def validar(original: str, partes: list[str], maximo: int) -> str | None:
 
 
 async def dar_forma_con_modelo(
-    llm: Any, texto: str, maximo: int, prompt: str | None = None
+    llm: Any, texto: str, maximo: int, prompt: str | None = None, contexto: str | None = None
 ) -> list[str] | None:
     """Reparte el texto con el modelo formateador. None = usa `partir`.
 
@@ -150,7 +161,7 @@ async def dar_forma_con_modelo(
     try:
         reply = await llm.complete(
             [
-                {"role": "system", "content": prompt_de_sistema(prompt or PROMPT_FORMATO_FABRICA, maximo)},
+                {"role": "system", "content": prompt_de_sistema(prompt or PROMPT_FORMATO_FABRICA, maximo, contexto)},
                 {"role": "user", "content": texto},
             ]
         )
