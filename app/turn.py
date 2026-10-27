@@ -121,6 +121,9 @@ class _Turno:
     crm_conversation_id: str | None = None
     # El motivo del handoff que este turno ya registró, si registró uno.
     handoff: str | None = None
+    # El canal, solo cuando el turno entra por el despacho estándar y NO es
+    # WhatsApp (`instagram`). `None` = el turno de siempre.
+    canal: str | None = None
 
 
 class TurnoSinCrm(Exception):
@@ -144,6 +147,7 @@ class _Pendiente:
     items: list[Any]
     fallas: int  # turnos de esta ráfaga que no alcanzaron al CRM
     crm_conversation_id: str | None = None
+    canal: str | None = None
     tarea: "asyncio.Task[None] | None" = None
     # Se agotaron los reintentos: la tarea ya no reintenta, espera a que el
     # CRM conteste para pasarle la conversación a un humano.
@@ -185,6 +189,7 @@ async def handle_flush(
     *,
     reintento: _Pendiente | None = None,
     propagate_errors: bool = False,
+    canal: str | None = None,
 ) -> None:
     """Callback del coalescer (y del despacho en cloud) — nunca propaga excepciones.
 
@@ -209,7 +214,7 @@ async def handle_flush(
     si al tomar el candado un mensaje nuevo ya se llevó su ráfaga, no hay
     nada que hacer.
     """
-    turno = _Turno(crm_conversation_id=crm_conversation_id or None)
+    turno = _Turno(crm_conversation_id=crm_conversation_id or None, canal=canal)
     clave = _clave(ctx, identity)
     try:
         async with conversation_lock(ctx, identity):
@@ -233,6 +238,7 @@ async def handle_flush(
                 turno.crm_conversation_id = (
                     turno.crm_conversation_id or pendiente.crm_conversation_id
                 )
+                turno.canal = turno.canal or pendiente.canal
                 # Rendida, el lead que vuelve a escribir abre una tanda nueva
                 # de reintentos: sigue ahí, esperando respuesta.
                 fallas = 0 if pendiente.rendida else pendiente.fallas
@@ -304,7 +310,10 @@ def _reprogramar(
     """Deja la ráfaga esperando al CRM: otro intento o, agotados, la vigilia."""
     esperas = ctx.settings.turn_retry_schedule
     pendiente = _Pendiente(
-        items=list(items), fallas=fallas, crm_conversation_id=turno.crm_conversation_id
+        items=list(items),
+        fallas=fallas,
+        crm_conversation_id=turno.crm_conversation_id,
+        canal=turno.canal,
     )
     ctx.turnos_pendientes[_clave(ctx, identity)] = pendiente
     marcas = ", ".join(_marcas(items)) or "ninguno"
@@ -364,7 +373,12 @@ async def _reintentar(
 ) -> None:
     await _dormir(pendiente, espera)
     await handle_flush(
-        ctx, identity, [], pendiente.crm_conversation_id, reintento=pendiente
+        ctx,
+        identity,
+        [],
+        pendiente.crm_conversation_id,
+        reintento=pendiente,
+        canal=pendiente.canal,
     )
 
 
@@ -471,7 +485,17 @@ async def run_turn(
 
     # --- Gate 1: allowlist de pruebas (Constitución V) --------------------
     allowed = settings.allowed_identities
-    if allowed and canonical_identity(identity) not in allowed:
+    if turno.canal and turno.canal != "whatsapp":
+        # Instagram y demás: su propia lista (ALLOWED_IG_IDS, vacía = nadie). La de
+        # WhatsApp son teléfonos y no aplica; WhatsApp sigue por el elif de abajo.
+        if not settings.canal_permitido(identity):
+            logger.info(
+                "allowlist (%s): %s fuera de ALLOWED_IG_IDS — sin respuesta",
+                turno.canal,
+                identity,
+            )
+            return
+    elif allowed and canonical_identity(identity) not in allowed:
         logger.info(
             "allowlist: %s fuera de ALLOWED_WA_IDS — relay sí, respuesta no", identity
         )
@@ -602,7 +626,11 @@ async def run_turn(
     ctx.agenda_enabled = await agenda_vigente(ctx)
     referral = next((m.referral_headline for m in inbound if m.referral_headline), None)
     offered = await ctx.store.get_offered_slots(conv.id)
-    profile = await resolve_profile(ctx)
+    # WhatsApp llama EXACTAMENTE como siempre (sin canal): solo el despacho
+    # estándar de un canal con prompt propio pide su perfil.
+    profile = await (
+        resolve_profile(ctx, turno.canal) if turno.canal else resolve_profile(ctx)
+    )
     system = build_system_prompt(
         profile=profile,
         context=context,

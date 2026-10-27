@@ -113,6 +113,11 @@ class FollowupWorker:
         if context is None:
             logger.warning("followup %s: sin contexto — omitido", conv.wa_identity)
             return
+        if ((context.get("contact") or {}).get("channel") or "whatsapp") != "whatsapp":
+            # El seguimiento rápido es de WhatsApp (ventana de 24 h, plantillas): no se
+            # le manda a un contacto de Instagram aunque su turno haya pasado por aquí.
+            logger.info("followup %s: no es WhatsApp — omitido", conv.wa_identity)
+            return
         info = context.get("conversation") or {}
         crm_conv_id = info.get("id") or conv.crm_conversation_id
         if not crm_conv_id:

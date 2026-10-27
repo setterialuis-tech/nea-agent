@@ -224,6 +224,17 @@ class Settings(BaseSettings):
     # comando quedaba muerto justo donde hace falta — para correr una ronda
     # de pruebas en vivo había que cerrarle la puerta a los leads reales.
     tester_wa_ids: str = ""  # CSV; vacía = responde a todos (Constitución V)
+    # Instagram (y otros canales que no son WhatsApp), por el despacho estándar del
+    # CRM (BRAIN_DISPATCH_URL). CSV de canales que ESTA Nea atiende por esa
+    # puerta; vacía = apagada (Nea sigue exactamente como siempre). Es aparte del
+    # modo cloud: no cambia por dónde entra WhatsApp ni a qué superficie del CRM
+    # se contesta (/api/bot/*, con BOT_API_KEY). Ej.: DISPATCH_ESTANDAR=instagram
+    dispatch_estandar: str = ""
+    # Quién recibe respuesta por esos canales. Va SEPARADA de allowed_wa_ids: esa
+    # lista es de teléfonos de WhatsApp y no sirve para identidades `ig:<id>`.
+    # Vacía = NADIE (al revés que allowed_wa_ids, a propósito: el canal nuevo
+    # nace cerrado). `*` = todos.
+    allowed_ig_ids: str = ""
     coalesce_seconds: float = 4.0
     followup_hours: float = 4.0
     # Herramienta send_media: enviar imagen/video por URL con caption. Solo
@@ -360,6 +371,31 @@ class Settings(BaseSettings):
             esperas.append(espera)
             total += espera
         return tuple(esperas)
+
+    @property
+    def dispatch_estandar_canales(self) -> frozenset[str]:
+        """Canales que se atienden por el despacho estándar. Vacío = apagado."""
+        return frozenset(
+            p.strip().lower() for p in self.dispatch_estandar.split(",") if p.strip()
+        )
+
+    @property
+    def secreto_de_despacho(self) -> str:
+        """Con qué se firma el despacho que llega.
+
+        En cloud, el secreto del cerebro. En el despacho estándar del CRM de un
+        solo negocio, la misma BOT_API_KEY con la que Nea contesta por /api/bot/*.
+        """
+        return self.crm_brain_secret if self.cloud_mode else self.crm_bot_api_key
+
+    def canal_permitido(self, identity: str) -> bool:
+        """¿Se le contesta a esta identidad por un canal que no es WhatsApp?
+
+        Vacía = nadie, `*` = todos. Una lista es de identidades EXACTAS
+        (`ig:<id>`), tal como las guarda el CRM.
+        """
+        entradas = {p.strip() for p in self.allowed_ig_ids.split(",") if p.strip()}
+        return "*" in entradas or identity.strip() in entradas
 
     @property
     def allowed_identities(self) -> frozenset[str]:

@@ -244,10 +244,14 @@ class CrmClient:
         data: dict[str, Any] = resp.json()
         return data
 
-    async def get_profile(self) -> dict[str, Any] | None:
+    async def get_profile(self, canal: str | None = None) -> dict[str, Any] | None:
         """Agent profile + knowledge base del negocio; None si el CRM no lo
-        expone todavía (404) — el bot cae al brief local (app/profile.py)."""
-        resp = await self._request("GET", "/api/bot/profile")
+        expone todavía (404) — el bot cae al brief local (app/profile.py).
+
+        `canal`: el prompt propio de ese canal (hoy `instagram`), si el CRM lo
+        tiene; si no, el de siempre. Sin canal, la petición es la de toda la vida."""
+        params = {"channel": canal} if canal else None
+        resp = await self._request("GET", "/api/bot/profile", params=params)
         if resp.status_code == 404:
             return None
         if resp.status_code != 200:

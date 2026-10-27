@@ -4,6 +4,25 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.13.0-rc.1 — 2026-10-27 (prueba)
+
+Prelanzamiento: Instagram por el despacho estándar del CRM. Todo queda DORMIDO
+mientras no se pongan las variables: sin ellas Nea es la de 1.12.1.
+
+- **Puerta de Instagram.** `DISPATCH_ESTANDAR=instagram` monta además
+  `POST /vocero/dispatch` (firma con `BOT_API_KEY`, contesta por `/api/bot/*`)
+  sin quitar el webhook de Meta. Un despacho de WhatsApp se confirma y se
+  ignora.
+- **Nace cerrado.** `ALLOWED_IG_IDS`: vacía = a nadie; `*` = a todos; lista de
+  identidades `ig:<id>` exactas. Aparte de `ALLOWED_WA_IDS`.
+- **Prompt por canal.** Pide `/api/bot/profile?channel=instagram` (caché aparte,
+  WhatsApp no se entera). Con un CRM sin esa función recibe el prompt de siempre.
+- El seguimiento rápido omite a quien no es de WhatsApp.
+
+### Actualizar desde 1.12.1
+
+Con el CRM en 1.34.0 o más para el prompt propio. Sin variables nuevas, igual que 1.12.1.
+
 ## 1.12.1 — 2026-10-23
 
 - **Une dos líneas que se publicaron en paralelo.** `v1.11.4` (el país del número, desde la rama `release/1.11.4`, ya desplegada en Roger) no traía el modo ahorro, y `v1.12.0` (modo ahorro, 1.11.1–1.11.3 y el origen de anuncio en todos los turnos) no traía el país del número. Esta versión trae todo: 1.11.4 + 1.12.0. Sin cambios de código respecto a la punta de la rama. Desplegar `1.12.0` o `1.11.4` por separado hace perder lo del otro.

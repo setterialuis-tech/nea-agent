@@ -99,7 +99,7 @@ async def recibir(request: Request) -> Any:
     if not firma_valida(
         body,
         request.headers.get("x-vocero-signature"),
-        ctx.settings.crm_brain_secret,
+        ctx.settings.secreto_de_despacho,
     ):
         logger.warning("despacho con firma inválida o ausente — 401")
         return JSONResponse({"error": "firma inválida"}, status_code=401)
@@ -150,6 +150,22 @@ async def _procesar(ctx: AppContext, payload: dict[str, Any], *, durable: bool =
         return
     identity = mensajes[0].identity
 
+    # Despacho estándar (CRM de un solo negocio): esta puerta es SOLO para los
+    # canales que se pidieron en DISPATCH_ESTANDAR. Un despacho de WhatsApp —que
+    # Nea ya recibe por el webhook de Meta— se confirma y se ignora: contestarlo
+    # aquí sería responder dos veces. En cloud no se filtra nada (como siempre).
+    canal: str | None = None
+    if not ctx.settings.cloud_mode:
+        canal = str(conversation.get("channel") or "").strip().lower()
+        if canal not in ctx.settings.dispatch_estandar_canales:
+            logger.info(
+                "despacho %s de canal %r: no es de los que atiende esta puerta (%s) — ignorado",
+                dispatch_id,
+                canal or "?",
+                ", ".join(sorted(ctx.settings.dispatch_estandar_canales)) or "ninguno",
+            )
+            return
+
     # Dedup por despacho, no por mensaje: el CRM reintenta el DESPACHO entero
     # cuando no le acusamos recibo, y contar sus mensajes uno por uno dejaría
     # pasar el segundo intento con la mitad de la ráfaga ya marcada.
@@ -188,7 +204,7 @@ async def _procesar(ctx: AppContext, payload: dict[str, Any], *, durable: bool =
     # sepa a quién pasársela si revienta antes de leer el contexto.
     await handle_flush(
         ctx_turno, identity, mensajes, crm_conversation_id=conversation_id,
-        propagate_errors=durable,
+        propagate_errors=durable, canal=canal,
     )
 
 

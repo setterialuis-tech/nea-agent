@@ -249,7 +249,7 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
             asyncio.create_task(followup_worker.run(), name="followup-worker"),
             asyncio.create_task(sender_worker.run(), name="sender-worker"),
         ]
-        if c.settings.cloud_mode:
+        if c.settings.cloud_mode or c.settings.dispatch_estandar_canales:
             workers.append(asyncio.create_task(run_dispatch_worker(c), name="dispatch-worker"))
         # El relay reenvía al CRM el payload crudo de Meta. En cloud el CRM YA
         # tiene el mensaje —él lo recibió y él nos lo despachó—, así que
@@ -289,10 +289,15 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         _wire_coalescer(ctx)
     # La entrada del despacho solo existe en cloud. Montarla siempre dejaría
     # una ruta pública de más en cada instalación que no la usa.
-    if (ctx.settings if ctx is not None else Settings()).cloud_mode:
+    ajustes = ctx.settings if ctx is not None else Settings()
+    if ajustes.cloud_mode:
         app.include_router(dispatch_router)
     else:
         app.include_router(webhook_router)
+        # Despacho estándar (DISPATCH_ESTANDAR=instagram): una puerta MÁS, solo
+        # para esos canales. WhatsApp sigue entrando por el webhook de arriba.
+        if ajustes.dispatch_estandar_canales:
+            app.include_router(dispatch_router)
 
     @app.get("/health")
     async def health(request: Request):  # type: ignore[no-untyped-def]
@@ -318,6 +323,8 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         # cuándo, y cuándo falló la última entrega?
         if not c.settings.cloud_mode:
             cuerpo["relay"] = await _estado_del_relay(c)
+            if c.settings.dispatch_estandar_canales:
+                cuerpo["despachoEstandar"] = sorted(c.settings.dispatch_estandar_canales)
         return cuerpo
 
     return app

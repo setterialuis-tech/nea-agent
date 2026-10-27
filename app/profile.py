@@ -165,10 +165,12 @@ def profile_from_brief(path: Path, default_name: str) -> BusinessProfile | None:
     return BusinessProfile(agent_name=default_name, instructions=text)
 
 
-async def resolve_profile(ctx: Any) -> BusinessProfile:
+async def resolve_profile(ctx: Any, canal: str | None = None) -> BusinessProfile:
     """Perfil vigente desde el AppContext; sin provider (tests) = mínimo."""
     if getattr(ctx, "profile", None) is None:
         return BusinessProfile(agent_name=getattr(ctx.settings, "agent_name", "Nea"))
+    if canal and canal != "whatsapp":
+        return await ctx.profile.get(canal)
     return await ctx.profile.get()
 
 
@@ -190,8 +192,40 @@ class ProfileProvider:
         self._cached: BusinessProfile | None = None
         self._fetched_at: float = 0.0
         self._warned_minimal = False
+        # Perfiles de canales con prompt propio (Instagram): caché aparte, para
+        # que lo de un canal jamás pise lo que lee WhatsApp.
+        self._canales: dict[str, tuple[BusinessProfile, float]] = {}
 
-    async def get(self) -> BusinessProfile:
+    async def _get_canal(self, canal: str) -> BusinessProfile:
+        """El perfil de un canal con prompt propio; el de siempre si no hay."""
+        now = time.monotonic()
+        guardado = self._canales.get(canal)
+        if guardado is not None and (now - guardado[1]) < self._ttl:
+            return guardado[0]
+        payload = None
+        try:
+            payload = await self._crm.get_profile(canal=canal)
+        except (CrmError, TypeError, AttributeError) as exc:
+            # CRM caído o cliente sin canal: el último conocido de ESTE canal, y
+            # si no hay, el perfil de siempre.
+            logger.warning(
+                "perfil (%s): sin respuesta del CRM (%s) — uso el último o el de siempre",
+                canal,
+                exc,
+            )
+            if guardado is not None:
+                self._canales[canal] = (guardado[0], now)
+                return guardado[0]
+            return await self.get()
+        if payload is None:
+            return await self.get()
+        perfil = profile_from_payload(payload, self._default_name)
+        self._canales[canal] = (perfil, now)
+        return perfil
+
+    async def get(self, canal: str | None = None) -> BusinessProfile:
+        if canal and canal != "whatsapp":
+            return await self._get_canal(canal)
         now = time.monotonic()
         if self._cached is not None and not self._cached.cloud and (now - self._fetched_at) < self._ttl:
             return self._cached
