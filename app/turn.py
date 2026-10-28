@@ -637,7 +637,8 @@ async def run_turn(
         conv=conv,
         referral_headline=referral,
         offered=offered,
-        agenda=ctx.agenda_enabled,
+        # Sin propose_slots (apagada en el CRM) el negocio no agenda por aquí.
+        agenda=ctx.agenda_enabled and not _agenda_apagada(profile.tools_off),
         tz=_agent_tz(settings),
         recordatorios=bool(getattr(ctx.crm, "supports_agenda_v2", False)),
     )
@@ -646,7 +647,7 @@ async def run_turn(
     recientes = await ctx.store.recent_messages(
         conv.id, max(STALL_LOOKBACK, 2 * settings.stall_max_turns + 2)
     )
-    history = recientes[-settings.history_window :]
+    history = recientes[-(profile.history_window or settings.history_window) :]
     messages: list[dict[str, Any]] = [{"role": "system", "content": system}] + [
         {"role": m.role, "content": m.content} for m in history
     ]
@@ -724,7 +725,8 @@ async def run_turn(
 
     # Backstop determinista: al tercer strike el handoff SUCEDE, lo haya
     # llamado el modelo o no (la regla de negocio no depende de su humor).
-    if streak >= 3 and runtime.handoff_reason is None:
+    # Con handoff apagado en el CRM, la IA no pasa a nadie por su cuenta.
+    if streak >= 3 and runtime.handoff_reason is None and "handoff" not in profile.tools_off:
         runtime.handoff_reason = "hostilidad"
 
     # --- Enviar la respuesta (SIEMPRE vía el CRM, nunca Meta directo) -----
@@ -1018,6 +1020,11 @@ def _respuesta_invalida(texto: str | None, previos: list[str]) -> str | None:
     return None
 
 
+def _agenda_apagada(off: frozenset[str]) -> bool:
+    """Sin propose_slots no hay forma de ofrecer horarios: el agente no agenda."""
+    return "propose_slots" in off
+
+
 async def _tool_loop(
     ctx: AppContext, messages: list[dict[str, Any]], runtime: ToolRuntime
 ) -> str | None:
@@ -1038,9 +1045,11 @@ async def _tool_loop(
     """
     # El modelo que conversa: el de Ajustes → IA del CRM si lo mandó, si no el del entorno.
     llm = await roles.llm_de(ctx, "conversacion")
+    # Agente → Herramientas de Nea: lo que el negocio apagó no se le ofrece al modelo.
+    off: frozenset[str] = getattr(runtime, "tools_off", frozenset())
     for _ in range(MAX_TOOL_ROUNDS):
         reply = await llm.complete(
-            messages, tools=tool_schemas(ctx.agenda_enabled, bool(getattr(ctx.crm, "supports_agenda_v2", False)), bool(getattr(ctx.crm, "supports_coordination", False)), media=bool(ctx.settings.send_media_enabled and getattr(ctx.crm, "supports_media", False)), qualify=bool(ctx.settings.qualify_enabled and hasattr(ctx.crm, "qualify")), transmitir_aviso=bool(ctx.settings.transmitir_aviso_enabled and hasattr(ctx.crm, "qualify")), quotes=bool(ctx.settings.quotes_enabled and hasattr(ctx.crm, "create_quote")))
+            messages, tools=tool_schemas(ctx.agenda_enabled and not _agenda_apagada(off), bool(getattr(ctx.crm, "supports_agenda_v2", False)), bool(getattr(ctx.crm, "supports_coordination", False)), media=bool(ctx.settings.send_media_enabled and getattr(ctx.crm, "supports_media", False)), qualify=bool(ctx.settings.qualify_enabled and hasattr(ctx.crm, "qualify")), transmitir_aviso=bool(ctx.settings.transmitir_aviso_enabled and hasattr(ctx.crm, "qualify")), quotes=bool(ctx.settings.quotes_enabled and hasattr(ctx.crm, "create_quote")), off=off)
         )
         if not reply.tool_calls:
             return reply.content  # turno de puro texto

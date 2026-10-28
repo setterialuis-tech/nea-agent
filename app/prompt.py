@@ -16,6 +16,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from app.herramientas import recortar_herramientas
 from app.pais import pais_del_numero
 from app.profile import BusinessProfile
 from app.state import Conversation, OfferedSlot
@@ -339,6 +340,9 @@ def build_system_prompt(
     `recordatorios`: ¿el CRM manda recordatorios de la cita? Solo la agenda v2
     de Vocero Cloud; el CRM raíz no. Sin la capacidad, el agente no los ofrece.
     """
+    # Sin propose_slots (apagada en el CRM) no hay forma de ofrecer horarios.
+    if "propose_slots" in profile.tools_off:
+        agenda = False
     tz = tz or DEFAULT_TZ
     now = now or datetime.now(timezone.utc)
     lines: list[str] = ["", "CONTEXTO ACTUAL:"]
@@ -428,12 +432,14 @@ def build_system_prompt(
 
     lines.extend(_booking_lines((context or {}).get("booking"), now))
 
-    return (
+    # Agente → Herramientas de Nea: el chasis no nombra lo que el negocio apagó.
+    return recortar_herramientas(
         _chassis(profile)
         + "\n\n"
         + _business_block(profile)
         + "\n"
-        + "\n".join(lines)
+        + "\n".join(lines),
+        profile.tools_off,
     )
 
 

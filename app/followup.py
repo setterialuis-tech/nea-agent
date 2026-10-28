@@ -172,7 +172,7 @@ class FollowupWorker:
         )
         await sincronizar_historial(ctx, conv, str(crm_conv_id))
         history = await ctx.store.recent_messages(
-            conv.id, ctx.settings.history_window
+            conv.id, perfil.history_window or ctx.settings.history_window
         )
         messages: list[dict[str, Any]] = (
             [{"role": "system", "content": system}]

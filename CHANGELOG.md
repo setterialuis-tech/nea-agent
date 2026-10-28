@@ -4,6 +4,24 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.14.0 — 2026-10-28
+
+Herramientas e historial controlados desde el CRM (Agente → Herramientas de Nea).
+Con un CRM que no manda la lista, Nea se comporta igual que en 1.13.0-rc.1.
+
+- **Herramientas apagables.** `GET /api/bot/profile` puede traer `tools`
+  (`{nombre: true/false}`): lo que llega en `false` no se le ofrece al modelo,
+  el chasis deja de nombrarlo (`app/herramientas.py`) y, si el modelo lo
+  inventa, no se ejecuta. Con `propose_slots` apagada el agente no agenda por
+  aquí; con `handoff` apagada tampoco hay pase automático por hostilidad (el
+  pase por error del sistema sigue igual).
+- **Historial desde el CRM.** `historyWindow` (2 a 50) manda sobre
+  `HISTORY_WINDOW`, en el turno y en el seguimiento.
+
+### Actualizar desde 1.13.0-rc.1
+
+Redesplegar. Sin variables nuevas.
+
 ## 1.13.0-rc.1 — 2026-10-27 (prueba)
 
 Prelanzamiento: Instagram por el despacho estándar del CRM. Todo queda DORMIDO

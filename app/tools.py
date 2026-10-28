@@ -372,7 +372,7 @@ QUOTE_SCHEMA: dict[str, Any] = {
 QUOTE_MAX_ITEMS = 30
 
 
-def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False, media: bool = False, qualify: bool = False, quotes: bool = False, transmitir_aviso: bool = False) -> list[dict[str, Any]]:
+def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordination: bool = False, media: bool = False, qualify: bool = False, quotes: bool = False, transmitir_aviso: bool = False, off: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
     base = _tool_schemas(agenda_enabled, agenda_v2, coordination)
     if media:
         base = base + [MEDIA_SCHEMA]
@@ -384,6 +384,9 @@ def tool_schemas(agenda_enabled: bool = True, agenda_v2: bool = False, coordinat
         base = base + [QUALIFY_SCHEMA]
     if quotes:
         base = base + [QUOTE_SCHEMA]
+    # Agente → Herramientas de Nea: lo que el negocio apagó no existe para el modelo.
+    if off:
+        base = [t for t in base if t.get("function", {}).get("name") not in off]
     return base
 
 
@@ -565,7 +568,16 @@ class ToolRuntime:
         # send_media: se encolan y turn.py los envía DESPUÉS del texto del turno.
         self.media_queue: list[dict[str, str]] = []
 
+    @property
+    def tools_off(self) -> frozenset[str]:
+        """Las herramientas que el negocio apagó en el CRM (Agente → Herramientas de Nea)."""
+        return self._profile.tools_off
+
     async def execute(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        # Apagada en el CRM: aunque el modelo la invente, no se ejecuta.
+        if name in self._profile.tools_off:
+            logger.warning("tools: %s está apagada por el negocio — no se ejecuta", name)
+            return {"ok": False, "error": "herramienta_desactivada", "detalle": "sigue la conversación según tus instrucciones"}
         try:
             if name == "coordination_consent" and getattr(self._ctx.crm, "supports_coordination", False):
                 if not isinstance(args.get("consent"), bool):

@@ -70,6 +70,11 @@ class BusinessProfile:
     # vision). Trae llaves: nunca se imprime (`repr=False`) ni se guarda en disco.
     # Vacío = cada función usa lo que diga el entorno de Nea.
     modelos: dict[str, dict[str, str]] = field(default_factory=dict, repr=False)
+    # Agente → Herramientas de Nea en el CRM: las que el negocio APAGÓ. Vacío =
+    # todas las que Nea ofrece de siempre (un CRM viejo no manda nada).
+    tools_off: frozenset[str] = frozenset()
+    # Agente → Historial: cuántos mensajes recientes ve el modelo. None = el entorno.
+    history_window: int | None = None
 
     @property
     def has_knowledge(self) -> bool:
@@ -95,6 +100,26 @@ def _modelos_de(crudo: Any) -> dict[str, dict[str, str]]:
         if limpio["model"] and limpio["apiKey"] and limpio["baseUrl"]:
             salida[funcion] = limpio
     return salida
+
+
+# Las herramientas que el CRM puede apagar (Agente → Herramientas de Nea).
+HERRAMIENTAS_CONFIGURABLES = (
+    "propose_slots",
+    "book_session",
+    "reschedule_session",
+    "update_ficha",
+    "route_out",
+    "handoff",
+    "send_media",
+    "Transmitir_aviso",
+)
+
+
+def _apagadas(crudo: Any) -> frozenset[str]:
+    """Las herramientas que el CRM manda en `false`. Lo desconocido se ignora."""
+    if not isinstance(crudo, dict):
+        return frozenset()
+    return frozenset(n for n in HERRAMIENTAS_CONFIGURABLES if crudo.get(n) is False)
 
 
 def profile_from_payload(payload: dict[str, Any], default_name: str) -> BusinessProfile:
@@ -128,7 +153,16 @@ def profile_from_payload(payload: dict[str, Any], default_name: str) -> Business
     fu_prompt = fu.get("prompt")
     fu_prompt = fu_prompt.strip() if isinstance(fu_prompt, str) else ""
 
+    try:
+        ventana: int | None = int(payload.get("historyWindow"))
+    except (TypeError, ValueError):
+        ventana = None
+    if ventana is not None and not 2 <= ventana <= 50:
+        ventana = None
+
     return BusinessProfile(
+        tools_off=_apagadas(payload.get("tools")),
+        history_window=ventana,
         followup_enabled=fu.get("enabled") if isinstance(fu.get("enabled"), bool) else None,
         followup_hours=fu_horas,
         followup_prompt=fu_prompt or None,
