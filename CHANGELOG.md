@@ -4,6 +4,13 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.14.1 — 2026-10-29
+
+- **Viñetas que WhatsApp sí pinta.** El modelo a veces escribe `*   texto` (tres
+  espacios) o `• texto`; WhatsApp solo hace lista con `- ` o `* ` y UN espacio, y
+  lo demás se ve con el asterisco suelto. Antes de enviar, esas viñetas pasan a
+  `- texto`. Sin variables nuevas; actualizar es redesplegar.
+
 ## 1.14.0 — 2026-10-28
 
 Herramientas e historial controlados desde el CRM (Agente → Herramientas de Nea).
