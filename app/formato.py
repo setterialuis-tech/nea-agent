@@ -45,6 +45,9 @@ _CODIGO = re.compile(r"`([^`\n]+)`")
 
 _SEPARADOR_TABLA = re.compile(r"^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$")
 _REGLA = re.compile(r"^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$", re.M)
+# Viñeta al inicio de línea: `*`, `-` o `•`, seguida de espacios y texto. WhatsApp solo la pinta
+# como lista si lleva `-` o `*` y UN solo espacio (`*   Revisión` se ve con el asterisco suelto).
+_VINETA = re.compile(r"^([ \t]*)([*•-])([ \t]+)(?=\S)", re.M)
 _TITULO = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$", re.M)
 
 _NEGRITA_CURSIVA = re.compile(r"\*\*\*(?!\s)((?:(?!\*\*\*)[^\n])+?)(?<!\s)\*\*\*")
@@ -57,6 +60,13 @@ _ENFASIS_DE_ENLACE = re.compile(
 )
 
 _LINEAS_EN_BLANCO = re.compile(r"\n(?:[ \t]*\n){2,}")
+
+
+def _vineta(m: re.Match[str]) -> str:
+    """Deja la viñeta como la pinta WhatsApp: `- ` con un solo espacio."""
+    if m.group(2) in "*-" and m.group(3) == " ":
+        return m.group(0)  # ya es una lista de WhatsApp
+    return f"{m.group(1)}- "
 
 
 def a_whatsapp(texto: str) -> str:
@@ -93,6 +103,7 @@ def a_whatsapp(texto: str) -> str:
     s = s.replace("**", "")
 
     s = _TITULO.sub(lambda m: _titulo(m.group(1)), s)
+    s = _VINETA.sub(_vineta, s)
 
     s = _LINEAS_EN_BLANCO.sub("\n\n", s).strip()
     return _MARCA.sub(lambda m: protegidos[int(m.group(1))], s)

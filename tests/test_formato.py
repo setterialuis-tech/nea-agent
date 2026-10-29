@@ -120,6 +120,20 @@ def test_idempotente(entrada, esperado):
     assert a_whatsapp(esperado) == esperado
 
 
+def test_las_viñetas_salen_como_lista_de_whatsapp():
+    # `*   texto` (Gemini) y `• texto` (el prompt) se ven con el símbolo suelto: pasan a `- texto`.
+    assert (
+        a_whatsapp("Incluye:\n*   Revisión\n*   Definición\n• Presupuesto\n-   Dudas\n🩺 *¿Te cuento?*")
+        == "Incluye:\n- Revisión\n- Definición\n- Presupuesto\n- Dudas\n🩺 *¿Te cuento?*"
+    )
+    # Con negrita adentro y con sangría.
+    assert a_whatsapp("*   **Precio:** $600") == "- *Precio:* $600"
+    assert a_whatsapp("Lista:\n  •   Uno") == "Lista:\n  - Uno"
+    # Idempotente.
+    una_vez = a_whatsapp("*   A\n*   B")
+    assert a_whatsapp(una_vez) == una_vez
+
+
 @pytest.mark.parametrize(
     "texto",
     [
