@@ -11,7 +11,7 @@ import json
 import logging
 import re
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from typing import Any, AsyncIterator
 from zoneinfo import ZoneInfo
@@ -34,7 +34,7 @@ from app.stall import (
 )
 from app.profile import resolve_profile
 from app.prompt import build_system_prompt
-from app.sincronia import quitar_marcas, sincronizar_historial
+from app.sincronia import desde_de, quitar_marcas, sincronizar_historial
 from app.state import AppContext, InboundMessage, utcnow
 from app.tools import ToolRuntime, tool_schemas
 
@@ -566,11 +566,14 @@ async def run_turn(
         conversation_info.get("aiEnabled", False)
         and conversation_info.get("windowOpen", False)
     )
+    # Solo cuenta lo de ESTA conversación del CRM (ver sincronia.desde_de).
+    desde = desde_de(context)
     await sincronizar_historial(
         ctx,
         conv,
         str(crm_conv_id),
         excluir=[m.wa_message_id for m in inbound] if va_a_responder else (),
+        desde=desde,
     )
     if not conversation_info.get("aiEnabled", False):
         logger.info("turno %s: aiEnabled=false (handoff activo) — silencio", identity)
@@ -631,21 +634,29 @@ async def run_turn(
     profile = await (
         resolve_profile(ctx, turno.canal) if turno.canal else resolve_profile(ctx)
     )
+    # Se traen más mensajes de los que ve el LLM: el candado de cierre cuenta
+    # el hilo COMPLETO del lead, no solo la ventana de contexto. Solo los de ESTA
+    # conversación del CRM: la memoria que dejó n8n (otras campañas, otros precios)
+    # no es parte de la charla de hoy.
+    recientes = await ctx.store.recent_messages(
+        conv.id, max(STALL_LOOKBACK, 2 * settings.stall_max_turns + 2), desde=desde
+    )
+    # «¿ya la saludé?» se decide por lo que hay en la bandeja de esta conversación, no por
+    # la marca de una conversación vieja del mismo teléfono (venía en `greeted` desde la
+    # carga de n8n y el primer mensaje salía sin saludo ni petición de datos).
+    conv_prompt = conv
+    if conv.greeted and not any(m.role == "assistant" for m in recientes):
+        conv_prompt = replace(conv, greeted=False)
     system = build_system_prompt(
         profile=profile,
         context=context,
-        conv=conv,
+        conv=conv_prompt,
         referral_headline=referral,
         offered=offered,
         # Sin propose_slots (apagada en el CRM) el negocio no agenda por aquí.
         agenda=ctx.agenda_enabled and not _agenda_apagada(profile.tools_off),
         tz=_agent_tz(settings),
         recordatorios=bool(getattr(ctx.crm, "supports_agenda_v2", False)),
-    )
-    # Se traen más mensajes de los que ve el LLM: el candado de cierre cuenta
-    # el hilo COMPLETO del lead, no solo la ventana de contexto.
-    recientes = await ctx.store.recent_messages(
-        conv.id, max(STALL_LOOKBACK, 2 * settings.stall_max_turns + 2)
     )
     history = recientes[-(profile.history_window or settings.history_window) :]
     messages: list[dict[str, Any]] = [{"role": "system", "content": system}] + [

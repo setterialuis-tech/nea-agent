@@ -4,6 +4,25 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.14.2 — 2026-10-30
+
+- **La IA solo recuerda la conversación de la bandeja.** Nea guarda su memoria por
+  teléfono, y de la carga de n8n quedaron mensajes viejos (otras campañas, otros
+  precios) que el modelo seguía como si fueran de hoy («cofinanciación del 45 %»,
+  «la sesión en vivo de hoy»). Ahora el historial que ve el modelo empieza cuando
+  empezó la conversación en el CRM (`conversation.startedAt`, con 15 min de
+  holgura). Con un CRM que no manda esa fecha, todo igual que antes.
+- **El saludo de primer contacto se decide por esa conversación.** La marca
+  «ya saludé» de una conversación vieja del mismo teléfono ya no hace que el primer
+  mensaje de hoy salga sin presentarse ni pedir nombre y ciudad.
+- **La sincronía con el CRM trae el hilo de hoy aunque haya memoria vieja.** Antes,
+  con memoria previa solo se fijaba el cursor y lo que el CRM ya tenía no entraba.
+- **El anuncio ya no se menciona a la fuerza.** El chasis decía «menciónalo» y
+  «personaliza el saludo mencionando el anuncio», y le ganaba a la regla del negocio
+  de no nombrarlo. Ahora lo permite solo si las instrucciones del negocio no lo
+  prohíben.
+- Sin variables nuevas ni migración; actualizar es redesplegar.
+
 ## 1.14.1 — 2026-10-29
 
 - **Viñetas que WhatsApp sí pinta.** El modelo a veces escribe `*   texto` (tres

@@ -210,7 +210,7 @@ class Store(Protocol):
         wa_message_id: str | None = None,
     ) -> None: ...
     async def recent_messages(
-        self, conversation_id: int, limit: int
+        self, conversation_id: int, limit: int, desde: datetime | None = None
     ) -> list[BotMessage]: ...
     async def importar_historial_crm(
         self,
@@ -422,9 +422,14 @@ class MemoryStore(MemoryDispatchStore):
         )
 
     async def recent_messages(
-        self, conversation_id: int, limit: int
+        self, conversation_id: int, limit: int, desde: datetime | None = None
     ) -> list[BotMessage]:
-        msgs = [m for m in self.messages if m.conversation_id == conversation_id]
+        msgs = [
+            m
+            for m in self.messages
+            if m.conversation_id == conversation_id
+            and (desde is None or m.created_at >= desde)
+        ]
         return msgs[-limit:]
 
     async def importar_historial_crm(

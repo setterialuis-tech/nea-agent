@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timedelta
 from typing import Any, Iterable
 
 from app.crm import CrmError
@@ -87,6 +88,32 @@ def a_memoria(m: dict[str, Any]) -> tuple[str, str, str, str] | None:
     return rol, prefijo + texto, clave, fuente
 
 
+# Holgura entre «nació la conversación en el CRM» y su primer mensaje: el CRM la crea unos
+# segundos después de la hora que Meta le pone al mensaje.
+_HOLGURA_INICIO = timedelta(minutes=15)
+
+
+def desde_de(context: dict[str, Any] | None) -> datetime | None:
+    """Desde cuándo cuenta la memoria de esta conversación: lo que el CRM tiene en la bandeja.
+
+    Nea guarda por teléfono, y de la migración de n8n quedaron hasta 40 mensajes viejos de
+    4.857 números: charlas de otras campañas, con otros precios y otros textos, que el
+    modelo seguía como si fueran de hoy (cofinanciación del 45 %, «la sesión en vivo de
+    hoy»). La conversación del CRM trae su fecha de inicio (`conversation.startedAt`); lo
+    anterior no es de ella. Sin la fecha (CRM viejo) no se filtra nada.
+    """
+    raw = ((context or {}).get("conversation") or {}).get("startedAt")
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        inicio = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if inicio.tzinfo is None:
+        return None
+    return inicio - _HOLGURA_INICIO
+
+
 def _cursor_de(m: dict[str, Any]) -> str:
     return f"{m['createdAt']}|{m['id']}"
 
@@ -103,6 +130,7 @@ async def sincronizar_historial(
     conv: Conversation,
     crm_conv_id: str,
     excluir: Iterable[str] = (),
+    desde: datetime | None = None,
 ) -> int:
     """Trae lo posterior al cursor y lo guarda. Devuelve cuántas filas entraron.
 
@@ -115,7 +143,7 @@ async def sincronizar_historial(
         return 0
     excluir = set(excluir)
     try:
-        return await _sincronizar(ctx, conv, crm_conv_id, get_history, excluir)
+        return await _sincronizar(ctx, conv, crm_conv_id, get_history, excluir, desde)
     except CrmError as exc:
         logger.warning("sincronía %s: el CRM no contestó (%s) — sigo sin ella", conv.wa_identity, exc)
     except Exception:  # la sincronía jamás tumba un turno
@@ -129,6 +157,7 @@ async def _sincronizar(
     crm_conv_id: str,
     get_history: Any,
     excluir: set[str],
+    desde: datetime | None = None,
 ) -> int:
     cursor = conv.crm_sync_cursor
     entradas: list[tuple[str, str, str, str]] = []
@@ -138,7 +167,10 @@ async def _sincronizar(
     # Sin cursor y con memoria local previa (instalación anterior a esta
     # función): lo anterior ya está, en su mayoría, guardado por Nea; traerlo
     # duplicaría al paciente. Solo se fija el cursor en lo último que hay.
-    solo_fijar = primera_vez and bool(await ctx.store.recent_messages(conv.id, 1))
+    # La memoria vieja de otra época (n8n) no cuenta: sin nada de ESTA conversación, se trae.
+    solo_fijar = primera_vez and bool(
+        await ctx.store.recent_messages(conv.id, 1, desde=desde)
+    )
 
     for _ in range(MAX_PAGINAS):
         after, after_id = _partir(cursor)

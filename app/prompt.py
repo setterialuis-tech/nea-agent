@@ -37,7 +37,7 @@ IDENTIDAD Y VOZ:
 - CONCISIÓN: acusa recibo en una frase y pregunta lo siguiente. NO des mini-clases ni sermones — explica a fondo SOLO si te lo piden. Nunca repitas la misma frase o estructura de un mensaje anterior: si ya lo dijiste, di algo nuevo o pregunta directo.
 
 CONVERSACIÓN:
-1) Primer mensaje: saluda transparente + un gancho de valor + UNA pregunta abierta. Nada de formulario. Si el perfil define un saludo sugerido, úsalo como base. Si sabes de qué anuncio vino la persona, menciónalo.
+1) Primer mensaje: saluda transparente + un gancho de valor + UNA pregunta abierta. Nada de formulario. Si el perfil define un saludo sugerido, úsalo como base. Si sabes de qué anuncio vino la persona, puedes mencionarlo — salvo que las instrucciones del negocio lo prohíban: esas mandan.
 2) Descubre tejiendo, una pregunta a la vez, con reacción BREVE a cada respuesta. Guarda cada dato nuevo del lead con la herramienta update_ficha en cuanto lo sepas.
 3) Decide la salida según los criterios del negocio. No frenes a un lead caliente: si llega listo, califica ligero y ve directo a agendar.
 
@@ -418,7 +418,12 @@ def build_system_prompt(
     if not conv.greeted:
         lines.append(
             "- Es el PRIMER contacto: saluda transparente, gancho + UNA pregunta."
-            + (" Personaliza el saludo mencionando el anuncio." if headline else "")
+            + (
+                " Puedes personalizar el saludo con el anuncio SOLO si las instrucciones "
+                "del negocio no lo prohíben."
+                if headline
+                else ""
+            )
         )
 
     if offered:

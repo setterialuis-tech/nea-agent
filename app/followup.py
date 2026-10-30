@@ -19,7 +19,7 @@ from app.formato import a_whatsapp, cuenta_letras
 from app.llm import LlmExhausted
 from app.profile import resolve_profile
 from app.prompt import FOLLOWUP_INSTRUCTION, build_system_prompt
-from app.sincronia import quitar_marcas, sincronizar_historial
+from app.sincronia import desde_de, quitar_marcas, sincronizar_historial
 from app.state import AppContext, Conversation, utcnow
 from app.multiorg import ctx_de_organizacion
 from app.turn import conversation_lock
@@ -170,9 +170,10 @@ class FollowupWorker:
             tz=_agent_tz(ctx.settings),
             recordatorios=bool(getattr(ctx.crm, "supports_agenda_v2", False)),
         )
-        await sincronizar_historial(ctx, conv, str(crm_conv_id))
+        desde = desde_de(context)
+        await sincronizar_historial(ctx, conv, str(crm_conv_id), desde=desde)
         history = await ctx.store.recent_messages(
-            conv.id, perfil.history_window or ctx.settings.history_window
+            conv.id, perfil.history_window or ctx.settings.history_window, desde=desde
         )
         messages: list[dict[str, Any]] = (
             [{"role": "system", "content": system}]

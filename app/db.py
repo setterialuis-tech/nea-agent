@@ -335,15 +335,18 @@ class PgStore(PgDispatchStore):
         )
 
     async def recent_messages(
-        self, conversation_id: int, limit: int
+        self, conversation_id: int, limit: int, desde: datetime | None = None
     ) -> list[BotMessage]:
+        # `desde`: solo lo de esta conversación del CRM (ver app/sincronia.desde_de).
         rows = await self.pool.fetch(
             """
-            SELECT * FROM bot_message WHERE conversation_id = $1
+            SELECT * FROM bot_message
+            WHERE conversation_id = $1 AND ($3::timestamptz IS NULL OR created_at >= $3)
             ORDER BY id DESC LIMIT $2
             """,
             conversation_id,
             limit,
+            desde,
         )
         return [
             BotMessage(
