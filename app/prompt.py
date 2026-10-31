@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.herramientas import recortar_herramientas
+from app.nombre import nombre_para_saludar
 from app.pais import pais_del_numero
 from app.profile import BusinessProfile
 from app.state import Conversation, OfferedSlot
@@ -381,8 +382,21 @@ def build_system_prompt(
 
     contact = (context or {}).get("contact") or {}
     lead = (context or {}).get("lead") or {}
-    if contact.get("name"):
-        lines.append(f"- Nombre del lead: {contact['name']}.")
+    # El nombre del perfil de WhatsApp puede ser un negocio, un apodo o un emoji: solo se da
+    # si suena a persona, y solo el primero (app/nombre.py). Sin nombre, se saluda sin él.
+    nombre = nombre_para_saludar(contact.get("name"))
+    if nombre:
+        lines.append(
+            f"- Nombre del lead (el de su perfil de WhatsApp, puede no ser el real): {nombre}. "
+            "Si en la conversación dice cómo se llama, usa ese."
+        )
+    elif contact.get("name"):
+        lines.append(
+            "- NOMBRE DEL LEAD: no se sabe. Su perfil de WhatsApp no trae un nombre de persona, "
+            "así que NO lo llames por ese nombre ni por nada del perfil. Salúdalo sin nombre "
+            "(«Hola 👋», «Claro, es una decisión importante…») hasta que él diga cómo se llama; "
+            "entonces úsalo."
+        )
     if lead.get("stageName"):
         lines.append(f"- Etapa en el pipeline: {lead['stageName']}.")
     lines.extend(_linea_pais(contact, conv))

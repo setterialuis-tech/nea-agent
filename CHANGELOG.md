@@ -4,6 +4,20 @@ Qué cambia en cada versión de Nea y qué hacer al actualizar. Cada tag
 `vX.Y.Z` publica la imagen `ghcr.io/kevinrivm/nea-agent:X.Y.Z` (README,
 «Instalar»).
 
+## 1.14.3 — 2026-10-30
+
+- **El agente ya no llama a nadie por el nombre de su negocio.** El CRM guarda el
+  nombre del perfil de WhatsApp, que puede ser un negocio, un apodo o un emoji, y Nea
+  se lo pasaba tal cual al modelo: con un prompt que dice «Claro, [Nombre], …» salía
+  «Claro, Micro empresa de lavadora y agua señora luz, es una decisión importante».
+  Ahora el nombre solo llega si suena a persona (sin números, de 1 a 3 palabras, sin
+  palabras de negocio o de cargo) y solo el primero («Edwin Muñoz» → «Edwin»), con el
+  aviso de que puede no ser el real. Si no suena a persona, el modelo recibe la orden
+  de no usarlo y saludar sin nombre hasta que la persona diga el suyo.
+- Con el caso real repetido 16 veces en el modelo de producción: antes 12 de 16
+  usaban el nombre del negocio; ahora 0 de 16.
+- Sin variables nuevas; actualizar es redesplegar.
+
 ## 1.14.2 — 2026-10-30
 
 - **La IA solo recuerda la conversación de la bandeja.** Nea guarda su memoria por
